@@ -22,7 +22,7 @@ sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
 
 from shared.db import update_job_status
 from shared.exceptions import OCRError, UnsupportedFileTypeError
-from parser import parse_expense_document
+from ocr_parser import parse_expense_document
 
 SUPPORTED_EXTENSIONS = (".pdf", ".png", ".jpg", ".jpeg", ".tiff", ".tif")
 UPLOADS_BUCKET = os.environ.get("UPLOADS_BUCKET", "")

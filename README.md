@@ -6,8 +6,11 @@
 
 
 ---
+# Architecute of the project :- 
+![Dashboard](project_pic/architecture (2).png)
 
 ## Screenshots
+
 ### Dashboard
 ![Dashboard](project_pic/project_pic/login_page.png)
 

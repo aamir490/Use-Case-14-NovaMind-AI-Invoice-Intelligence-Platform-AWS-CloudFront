@@ -50,6 +50,10 @@ const apiStack = new ApiStack(app, `InvoiceApi-${env}`, {
   uploadsBucket: storageStack.uploadsBucket,
   invoicesTable: storageStack.invoicesTable,
   jobsTable:     storageStack.jobsTable,
+  // frontendUrl is passed after FrontendStack is deployed — on first deploy
+  // it will be undefined and localhost origins will be used. After the first
+  // full deploy, run: npx cdk deploy InvoiceApi-dev to pick up the CF URL.
+  frontendUrl:   app.node.tryGetContext('frontendUrl'),
   tags,
 });
 apiStack.addStackDependency(authStack);

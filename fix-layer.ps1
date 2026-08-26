@@ -1,21 +1,25 @@
-$root    = "e:\GenAi-Project-Cloudage\Trigger_OCR_Function_FM_NoSQL\new_project\Trigger_OCR_Function_FM_NoSQL"
-$srcPy   = "$root\backend\lambdas\shared"          # the .py source files
-$layerOut = "$root\backend\lambdas\shared-layer-v2" # fresh staging dir
-$zipPath  = "C:\Users\aamir\AppData\Local\Temp\shared-layer-v2.zip"
+# fix-layer.ps1 — Builds and attaches the shared Lambda layer to all 3 API Lambdas
+# Run from the project root directory
 
-# ── 1. Build correct layer structure: python/shared/*.py + python/deps ──────
+$root     = $PSScriptRoot
+$srcPy    = "$root\backend\lambdas\shared"
+$layerOut = "$root\backend\lambdas\shared-layer-v2"
+$zipPath  = "$env:TEMP\shared-layer-v2.zip"
+$testPayload = "$env:TEMP\test-payload.json"
+$lambdaOut   = "$env:TEMP\lambda-out.json"
+
+# ── 1. Build correct layer structure ────────────────────────────────────────
 Write-Host "Building layer structure..."
 
 if (Test-Path $layerOut) { Remove-Item $layerOut -Recurse -Force }
 
-# python/shared/ — the importable package
-$pkgDir = "$layerOut\python\shared"
+$pkgDir  = "$layerOut\python\shared"
+$depsDir = "$layerOut\python"
 New-Item -ItemType Directory -Path $pkgDir -Force | Out-Null
+
 Copy-Item "$srcPy\*.py" $pkgDir -Force
 Write-Host "  Copied .py files to python\shared\"
 
-# python/ — install dependencies flat so pydantic etc. are importable
-$depsDir = "$layerOut\python"
 pip install pydantic boto3 -t $depsDir --quiet --upgrade
 Write-Host "  pip install done"
 
@@ -55,7 +59,6 @@ Write-Host ""
 Write-Host "Updating Lambda functions..."
 foreach ($fn in @("invoice-api-upload-dev","invoice-api-invoices-dev","invoice-api-analytics-dev")) {
     aws lambda update-function-configuration --function-name $fn --layers $newArn | Out-Null
-    # Wait for update to complete
     aws lambda wait function-updated --function-name $fn
     Write-Host "  $fn updated"
 }
@@ -64,13 +67,13 @@ foreach ($fn in @("invoice-api-upload-dev","invoice-api-invoices-dev","invoice-a
 Write-Host ""
 Write-Host "Smoke testing upload Lambda..."
 $payload = '{"httpMethod":"POST","path":"/invoices/upload-url","headers":{"origin":"http://localhost:5173"},"requestContext":{"authorizer":{"claims":{"sub":"test-tenant-001"}}},"body":"{\"filename\":\"test.png\",\"content_type\":\"image/png\"}"}'
-[System.IO.File]::WriteAllText("C:\Users\aamir\AppData\Local\Temp\test-payload.json", $payload)
+[System.IO.File]::WriteAllText($testPayload, $payload)
 
 aws lambda invoke `
     --function-name invoice-api-upload-dev `
-    --payload "fileb://C:\Users\aamir\AppData\Local\Temp\test-payload.json" `
+    --payload "fileb://$testPayload" `
     --cli-binary-format raw-in-base64-out `
-    "C:\Users\aamir\AppData\Local\Temp\lambda-out.json" | Out-Null
+    $lambdaOut | Out-Null
 
-$response = Get-Content "C:\Users\aamir\AppData\Local\Temp\lambda-out.json"
+$response = Get-Content $lambdaOut
 Write-Host "Response: $response"

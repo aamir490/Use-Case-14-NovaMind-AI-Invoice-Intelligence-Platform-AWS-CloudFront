@@ -142,6 +142,7 @@ cd ..
 **Verify:**
 ```powershell
 # Check CDK is available
+cd ..
 cd infrastructure
 npx cdk --version   # should show 2.x.x
 cd ..
@@ -159,10 +160,12 @@ CDK needs an S3 bucket and IAM roles in your account before it can deploy anythi
 cd infrastructure
 
 # Replace with your actual account ID
+aws sts get-caller-identity
 $ACCOUNT_ID = aws sts get-caller-identity --query Account --output text
 $REGION = "us-east-1"
 
-npx cdk bootstrap aws://$ACCOUNT_ID/$REGION
+aws sts get-caller-identity
+npx cdk bootstrap aws://ACCOUNT_ID/us-east-1
 ```
 
 **Expected output:** `Environment aws://XXXXXXXXXXXX/us-east-1 bootstrapped.`
@@ -189,11 +192,40 @@ const ALLOWED_ORIGINS = [
 
 ## 5. Build the Lambda Layer
 
-All 8 Lambda functions import from a shared Python package (`shared/`). The package must be packaged as a Lambda Layer with the correct directory structure before deploying.
+All 8 Lambda functions import code from the shared Python package shared/. This package must be packaged into an AWS Lambda Layer with the correct directory structure before deployment.
+
+The source package should be located at:
+
+backend/lambdas/shared/
+
+The Lambda Layer staging directory is:
+
+backend/lambdas/shared-layer-v2/
 
 This step builds `backend/lambdas/shared-layer-v2/` — the staging directory that CDK zips and uploads.
 
+
+
 ```powershell
+# Get the project root 
+$root = (Get-Location).Path 
+
+# Source shared Python package 
+$srcPy = "$root\backend\lambdas\shared" 
+
+# Lambda Layer staging directory 
+$layerRoot = "$root\backend\lambdas\shared-layer-v2" 
+
+# Destination for the shared Python package 
+$outDir = "$layerRoot\python\shared" 
+
+# Create the required package directory 
+New-Item -ItemType Directory -Path $outDir -Force | Out-Null
+
+# Copy shared Python source files 
+Copy-Item "$srcPy\*.py" $outDir -Force
+
+
 # From the project root
 $root = (Get-Location).Path
 $srcPy  = "$root\backend\lambdas\shared"

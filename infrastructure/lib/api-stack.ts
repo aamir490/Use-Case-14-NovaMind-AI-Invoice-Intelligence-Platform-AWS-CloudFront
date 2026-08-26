@@ -9,7 +9,8 @@ import { Construct } from 'constructs';
 import * as path from 'path';
 
 // Origins allowed to call the API.
-// Add your CloudFront URL here once you deploy the frontend stack.
+// CloudFront production URL is added dynamically via frontendUrl prop at deploy time.
+// localhost entries are for local development only.
 const ALLOWED_ORIGINS = [
   'http://localhost:5173',   // Vite dev server
   'http://localhost:4173',   // Vite preview server
@@ -45,7 +46,7 @@ export class ApiStack extends cdk.Stack {
       layerVersionName: `invoice-api-shared-${envName}`,
       compatibleRuntimes: [lambda.Runtime.PYTHON_3_12],
       description: 'Shared utilities: db, models, exceptions, response helpers',
-      code: lambda.Code.fromAsset(path.join(lambdaRoot, 'shared-layer')),
+      code: lambda.Code.fromAsset(path.join(lambdaRoot, 'shared-layer-v2')),
     });
 
     // Build the final allowed-origins list at deploy time

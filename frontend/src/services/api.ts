@@ -12,7 +12,7 @@ import type {
   FilterState,
 } from '../types'
 
-const BASE_URL = import.meta.env.VITE_API_URL?.replace(/\/$/, '') || ''
+const BASE_URL = (import.meta as any).env?.VITE_API_URL?.replace(/\/$/, '') || ''
 
 const apiClient = axios.create({ baseURL: BASE_URL })
 
@@ -20,17 +20,12 @@ const apiClient = axios.create({ baseURL: BASE_URL })
 apiClient.interceptors.request.use(async (config) => {
   try {
     const token = await getIdToken()
-    // Only set the header if we actually have a non-empty token string
     if (token && token.length > 0) {
       config.headers.Authorization = `Bearer ${token}`
-      console.debug('[API] Token attached, length:', token.length)
-    } else {
-      console.warn('[API] No token available — request will be unauthorized')
     }
-  } catch (e) {
-    console.warn('[API] getIdToken() threw:', e)
+  } catch {
+    // Not authenticated — request goes out without Authorization header
   }
-  console.debug('[API] Request:', config.method?.toUpperCase(), config.baseURL + config.url)
   return config
 })
 

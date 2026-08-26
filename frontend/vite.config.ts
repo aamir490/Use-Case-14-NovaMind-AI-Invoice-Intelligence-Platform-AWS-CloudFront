@@ -11,6 +11,7 @@ export default defineConfig({
   },
   server: {
     port: 5173,
+    strictPort: true,  // fail if port 5173 is taken — never silently switch ports
   },
   build: {
     outDir: 'dist',

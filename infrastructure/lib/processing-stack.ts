@@ -85,7 +85,7 @@ export class ProcessingStack extends cdk.Stack {
       {
         layerVersionName: `invoice-shared-${envName}`,
         code: lambda.Code.fromAsset(
-          path.join(lambdaRoot, 'shared-layer')
+          path.join(lambdaRoot, 'shared-layer-v2')
         ),
         compatibleRuntimes: [
           lambda.Runtime.PYTHON_3_12,

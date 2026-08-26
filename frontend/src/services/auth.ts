@@ -9,11 +9,12 @@ import {
 } from 'aws-amplify/auth'
 
 export function configureAmplify() {
+  const env = (import.meta as any).env ?? {}
   Amplify.configure({
     Auth: {
       Cognito: {
-        userPoolId:       import.meta.env.VITE_COGNITO_USER_POOL_ID     || '',
-        userPoolClientId: import.meta.env.VITE_COGNITO_USER_POOL_CLIENT_ID || '',
+        userPoolId:       env.VITE_COGNITO_USER_POOL_ID       || '',
+        userPoolClientId: env.VITE_COGNITO_USER_POOL_CLIENT_ID || '',
       },
     },
   })
