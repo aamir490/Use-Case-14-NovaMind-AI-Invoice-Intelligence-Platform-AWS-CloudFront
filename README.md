@@ -7,12 +7,12 @@
 
 ---
 # Architecute of the project :- 
-![Dashboard](project_pic/architecture (2).png)
+![Dashboard](project_pic/architecture.png)
 
 ## Screenshots
 
 ### Dashboard
-![Dashboard](project_pic/project_pic/login_page.png)
+![Dashboard](project_pic/login_page.png)
 
 ### Dashboard
 ![Dashboard](project_pic/dashboard1.png)
