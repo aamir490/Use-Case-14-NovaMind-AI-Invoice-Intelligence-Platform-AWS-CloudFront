@@ -426,3 +426,131 @@ Use the opening section at the top of this document.
 ---
 
 *Built by [Aamir](https://github.com/aamir490) — github.com/aamir490 — linkedin.com/in/aamir-imran*
+
+---
+
+# Architecture of the Project
+
+![Architecture](project_pic/new-architecture.jpg)
+
+---
+
+## ⏱️ 30-Second Elevator Pitch
+
+"NovaMind AI is a secure, multi-tenant, completely serverless event-driven platform designed to automate invoice ingestion, document processing, and risk intelligence at scale. By leveraging an asynchronous orchestration pipeline, the system extracts text via Amazon Textract, injects generative AI anomaly detection using Amazon Bedrock Nova Micro, and overlays deterministic scoring rules. It handles unpredictable traffic surges natively, isolates customer data cleanly at the authentication tier, and operates entirely on a pay-per-use cost model with zero infrastructure to manage."
+
+---
+
+## 🔄 Detailed End-to-End Technical Flow
+
+```
+[User Browser] ──(1) Get SPA──> [CloudFront] ──(1) Fetch Source──> [S3 React SPA]
+      │
+     (2) Auth Credentials ──> [Cognito User Pool] ──(2) Return JWT Token
+      │
+     (3) POST /invoices/upload-url (With JWT Header) ──> [API Gateway] ──> [Upload Lambda]
+      │                                                                           │
+     (3) Pre-signed Upload URL <──────────────────────────────────────────────────┘
+      │
+     (4) PUT /invoice.pdf (Direct Upload) ──> [S3 Uploads Bucket]
+```
+
+### 1. User Login and React Frontend Delivery
+- **Why:** CloudFront acts as a global CDN to cache and serve static assets at low latency. S3 provides durable, cost-effective static website hosting for the React SPA.
+- **What moves:** Browser requests the app; CloudFront delivers the compiled React + TypeScript + Vite + Tailwind bundle.
+- **Process:** Synchronous.
+
+### 2. Cognito Authentication and JWT-Based Tenant Isolation
+- **Why:** Cognito offloads identity management, sign-up, and sign-in without custom backend auth code.
+- **Tenant isolation:** JWT `sub` claim = `tenant_id` = DynamoDB partition key. Every Lambda extracts this — a tenant can never access another's data.
+- **Process:** Synchronous.
+
+### 3. API Gateway and Pre-signed S3 Upload URL
+- **Why:** API Gateway verifies JWT via Cognito Authorizer before Lambda runs. Upload Lambda creates a PENDING job and returns a 5-minute pre-signed S3 URL.
+- **Process:** Synchronous.
+
+### 4. Direct Invoice Upload from Browser to S3
+- **Why:** Bypasses API Gateway's 10MB limit. File never touches Lambda or API Gateway.
+- **Process:** Synchronous from browser — marks shift to async pipeline.
+
+```
+[S3 Uploads Bucket] ──(5) ObjectCreated──> [SQS Queue] ──(5) Poll──> [SQS Trigger Lambda]
+                                               │                              │
+                                      (Failed 3x) ──> [SQS DLQ]              ▼
+                                                                 [Step Functions Express]
+```
+
+### 5. S3 Event → SQS → SQS Trigger Lambda
+- **Why:** SQS buffers burst uploads. Failed messages go to DLQ after 3 attempts.
+- **Process:** Asynchronous.
+
+### 6. Step Functions Express Orchestration
+```
+AWS Step Functions Express
+ ├── Stage 1: [OCR Lambda]   ───> [Amazon Textract AnalyzeExpense]
+ ├── Stage 2: [AI Lambda]    ───> [Amazon Bedrock Nova Micro]
+ ├── Stage 3: [Risk Lambda]  ───> Python Rules Engine
+ └── Stage 4: [Store Lambda] ───> [DynamoDB] + [S3 Text] + [EventBridge]
+```
+- **Why not one Lambda:** Each stage has its own retry logic, isolated failure, and no idle CPU wait.
+
+### 7. OCR Lambda — Textract AnalyzeExpense
+- Extracts vendor, dates, totals, line items natively. No training or parsing heuristics needed.
+
+### 8. AI Analysis Lambda — Bedrock Nova Micro (`us.amazon.nova-micro-v1:0`)
+- Temperature 0.2, structured JSON schema prompt, anti-hallucination rules.
+- Non-fatal: 4 retries with backoff, empty anomalies returned on failure.
+
+### 9. Risk Scoring Lambda — Deterministic Rules Engine
+- Math error (+40), missing fields (+8 each), duplicates (+15), non-standard number (+10).
+- AI HIGH (+15), MEDIUM (+7), LOW (+3). Cap 100. <30=LOW, 30–69=MEDIUM, ≥70=HIGH.
+
+### 10. Store Results Lambda
+- DynamoDB invoice record (COMPLETED), S3 processed text, EventBridge InvoiceProcessed, job status DONE.
+
+### 11. EventBridge + SNS
+- `risk_level = HIGH` → SNS email. New alert targets need no Lambda code changes.
+
+### 12. Frontend Polling
+- Polls `GET /invoices/{id}/status` every 3 seconds until COMPLETED. Renders risk gauge, anomaly list, AI explanation.
+
+---
+
+## 🛡️ Security, Monitoring, and Deployment
+
+- **IAM least privilege:** Each Lambda has its own minimal execution role.
+- **Multi-tenant:** DynamoDB PK = Cognito `sub`. No cross-tenant query is possible.
+- **CloudWatch + X-Ray:** End-to-end distributed tracing. DLQ alarm on any failure.
+- **CDK v2:** 5 stacks — Storage, Auth, Processing, API, Frontend — repeatable deployments.
+- **GitHub Actions OIDC:** No stored AWS keys anywhere in CI.
+
+---
+
+## 🎯 60-Second Polished Interview Closer
+
+*"NovaMind AI is an intelligent invoice processing platform on a serverless, event-driven AWS architecture. Pre-signed S3 uploads avoid API Gateway limits and Lambda bandwidth costs. Step Functions Express orchestrates Textract for OCR, Bedrock Nova Micro for AI anomaly detection, and a Python rules engine for deterministic math checks. Cognito JWT tenant isolation and least-privilege IAM secure every layer. CloudWatch and X-Ray provide full observability. CDK v2 ensures repeatable deployments. The result scales from zero to tens of thousands of invoices, paying only for the exact compute and tokens consumed."*
+
+---
+
+## ❓ 5 Likely Interview Questions and Strong Answers
+
+**1. Why Step Functions Express instead of Standard?**
+Express is for high-volume short-duration workflows under 5 minutes. Lower cost, higher throughput. Standard is for long-running human-in-the-loop processes.
+
+**2. Why polling instead of WebSockets?**
+Polling is simpler and stateless. Invoice analysis completes in seconds so 3-second polling provides the same UX without WebSocket connection management.
+
+**3. How does DynamoDB scale to millions of rows?**
+`tenant_id` is the partition key — all queries are targeted. Never a full table scan. Single-digit millisecond reads regardless of total table size.
+
+**4. Why Nova Micro over a larger model?**
+Structured JSON output for anomaly classification doesn't require deep reasoning — just reliable schema adherence. Nova Micro handles this at ~$2/month. Math checks are done deterministically.
+
+**5. How does the architecture handle Bedrock throttling?**
+Step Functions retries with exponential backoff. If all retries fail, the AI Lambda returns empty anomalies — the pipeline always completes and the invoice is stored as COMPLETED.
+
+---
+
+## 👪 Simple Explanation for a Non-Technical Audience
+
+"Imagine NovaMind AI as a digital accountant that never sleeps. When a company uploads an invoice, the system reads all the text, prices, and dates. An AI assistant checks for anything suspicious. A calculator verifies the math. Results go to the dashboard. If something looks highly suspicious, an urgent email fires to the manager. The system only turns on during the exact seconds it processes a document — then turns itself off — so the company pays only for what it uses."
