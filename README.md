@@ -30,9 +30,12 @@
 
 ![Dashboard](project_pic/NovaMind-Ai-Invoice-Intelligence-Platform-dashboard-pic1.png)
 
+
 ![Dashboard](project_pic/NovaMind-Ai-Invoice-Intelligence-Platform-dashboard-pic2.png)
 
+
 ![Dashboard](project_pic/NovaMind-Ai-Invoice-Intelligence-Platform-dashboard-pic3.png)
+
 
 ![Dashboard](project_pic/NovaMind-Ai-Invoice-Intelligence-Platform-dashboard-pic4.png)
 
