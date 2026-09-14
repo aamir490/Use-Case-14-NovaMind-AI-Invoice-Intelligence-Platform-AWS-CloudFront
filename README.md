@@ -11,22 +11,82 @@
 
 ## Screenshots
 
-### Dashboard
-![Dashboard](project_pic/login_page.png)
+### LoginPage
+-
+
+![Dashboard](project_pic/NovaMind-Ai-Invoice-Intelligence-Platform-loginpage.png)
+
+-
+
+![LoginPage](project_pic/NovaMind-Ai-Invoice-intelligence-Platfrom-verify-your-email.png)
+
+-
+
+![LoginPage](project_pic/NovaMind-Ai-Invoice-Intelligence-Platform-loginpage-signin-cloudfront-pic1.png)
+
+-
 
 ### Dashboard
-![Dashboard](project_pic/dashboard1.png)
+
+![Dashboard](project_pic/NovaMind-Ai-Invoice-Intelligence-Platform-dashboard-pic1.png)
+
+![Dashboard](project_pic/NovaMind-Ai-Invoice-Intelligence-Platform-dashboard-pic2.png)
+
+![Dashboard](project_pic/NovaMind-Ai-Invoice-Intelligence-Platform-dashboard-pic3.png)
+
+![Dashboard](project_pic/NovaMind-Ai-Invoice-Intelligence-Platform-dashboard-pic4.png)
+
 
 ### Uploaded Invoice — Processed with AI Risk Score
-![Invoice Detail](project_pic/uploaded_invoice2.png)
+
+![Invoice_Detail](invoices/zenith-infotech-invoice.jpg)
+
+![Dashboard](project_pic/NovaMind-Ai-invoice.png)
+
+
+![Dashboard](project_pic/NovaMind-Ai-Invoice-Intelligence-Platform-invoices-tab-pic1.png)
+
 
 ### Analytics
-![Analytics](project_pic/analytics_3.png)
+
+![Analytics](project_pic/NovaMind_Ai_Invoice_Intelligence_Platform_analytics_tab_pic1.png)
 
 ---
 
 ## For Deployment use - 
 - **deploy_project_via_clone.md**
+
+---
+
+## AWS Console — Live Infrastructure Screenshots
+
+### API Gateway
+![API Gateway](project_pic/aws-api-gateway.png)
+
+### CloudFormation Stacks
+![CloudFormation Stacks](project_pic/aws-cloudformation-stack.png)
+
+![CloudFormation](project_pic/aws-cloudformations.png)
+
+### CloudFront Distribution
+![CloudFront](project_pic/aws-cloudfront.png)
+
+### Cognito User Pool
+![Cognito](project_pic/aws-cognito.png)
+
+### Cognito Users
+![Cognito Users](project_pic/aws-cognito-users.png)
+
+### Lambda Functions
+![Lambda Functions](project_pic/aws-lmbda-functions.png)
+
+### SQS Queue
+![SQS](project_pic/aws-sqs.png)
+
+### Step Functions Pipeline
+![Step Functions](project_pic/aws-step-functions.png)
+
+---
 
 ## What This Does
 
