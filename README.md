@@ -4,6 +4,40 @@
 
 **Created by [Aamir](https://github.com/aamir490)** · [LinkedIn](https://www.linkedin.com/in/aamir-imran)
 
+---
+
+<!-- CI/CD -->
+[![Backend CI/CD](https://github.com/aamir490/Use-Case-14-NovaMind-AI-Invoice-Intelligence-Platform-AWS-CloudFront/actions/workflows/backend.yml/badge.svg)](https://github.com/aamir490/Use-Case-14-NovaMind-AI-Invoice-Intelligence-Platform-AWS-CloudFront/actions/workflows/backend.yml)
+[![Frontend CI/CD](https://github.com/aamir490/Use-Case-14-NovaMind-AI-Invoice-Intelligence-Platform-AWS-CloudFront/actions/workflows/frontend.yml/badge.svg)](https://github.com/aamir490/Use-Case-14-NovaMind-AI-Invoice-Intelligence-Platform-AWS-CloudFront/actions/workflows/frontend.yml)
+[![PR Checks](https://github.com/aamir490/Use-Case-14-NovaMind-AI-Invoice-Intelligence-Platform-AWS-CloudFront/actions/workflows/pr-checks.yml/badge.svg)](https://github.com/aamir490/Use-Case-14-NovaMind-AI-Invoice-Intelligence-Platform-AWS-CloudFront/actions/workflows/pr-checks.yml)
+
+<!-- Repo stats -->
+[![GitHub stars](https://img.shields.io/github/stars/aamir490/Use-Case-14-NovaMind-AI-Invoice-Intelligence-Platform-AWS-CloudFront?style=social)](https://github.com/aamir490/Use-Case-14-NovaMind-AI-Invoice-Intelligence-Platform-AWS-CloudFront/stargazers)
+[![GitHub forks](https://img.shields.io/github/forks/aamir490/Use-Case-14-NovaMind-AI-Invoice-Intelligence-Platform-AWS-CloudFront?style=social)](https://github.com/aamir490/Use-Case-14-NovaMind-AI-Invoice-Intelligence-Platform-AWS-CloudFront/network/members)
+[![GitHub last commit](https://img.shields.io/github/last-commit/aamir490/Use-Case-14-NovaMind-AI-Invoice-Intelligence-Platform-AWS-CloudFront)](https://github.com/aamir490/Use-Case-14-NovaMind-AI-Invoice-Intelligence-Platform-AWS-CloudFront/commits/main)
+
+<!-- Tech stack -->
+[![Python](https://img.shields.io/badge/Python-3.12-3776AB?logo=python&logoColor=white)](https://www.python.org/)
+[![TypeScript](https://img.shields.io/badge/TypeScript-5-3178C6?logo=typescript&logoColor=white)](https://www.typescriptlang.org/)
+[![React](https://img.shields.io/badge/React-18-61DAFB?logo=react&logoColor=black)](https://react.dev/)
+[![Vite](https://img.shields.io/badge/Vite-5-646CFF?logo=vite&logoColor=white)](https://vitejs.dev/)
+[![TailwindCSS](https://img.shields.io/badge/Tailwind_CSS-3-06B6D4?logo=tailwindcss&logoColor=white)](https://tailwindcss.com/)
+
+<!-- AWS services -->
+[![AWS Lambda](https://img.shields.io/badge/AWS-Lambda-FF9900?logo=awslambda&logoColor=white)](https://aws.amazon.com/lambda/)
+[![AWS Step Functions](https://img.shields.io/badge/AWS-Step_Functions-FF9900?logo=amazonaws&logoColor=white)](https://aws.amazon.com/step-functions/)
+[![Amazon Textract](https://img.shields.io/badge/Amazon-Textract-FF9900?logo=amazonaws&logoColor=white)](https://aws.amazon.com/textract/)
+[![Amazon Bedrock](https://img.shields.io/badge/Amazon-Bedrock-FF9900?logo=amazonaws&logoColor=white)](https://aws.amazon.com/bedrock/)
+[![Amazon DynamoDB](https://img.shields.io/badge/Amazon-DynamoDB-4053D6?logo=amazondynamodb&logoColor=white)](https://aws.amazon.com/dynamodb/)
+[![Amazon S3](https://img.shields.io/badge/Amazon-S3-569A31?logo=amazons3&logoColor=white)](https://aws.amazon.com/s3/)
+[![Amazon Cognito](https://img.shields.io/badge/Amazon-Cognito-DD344C?logo=amazonaws&logoColor=white)](https://aws.amazon.com/cognito/)
+[![AWS CDK](https://img.shields.io/badge/AWS-CDK_v2-FF9900?logo=amazonaws&logoColor=white)](https://aws.amazon.com/cdk/)
+
+<!-- Misc -->
+[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
+[![Serverless](https://img.shields.io/badge/Architecture-Serverless-black?logo=serverless&logoColor=red)](https://aws.amazon.com/serverless/)
+[![GenAI](https://img.shields.io/badge/Powered_by-Generative_AI-8A2BE2)](https://aws.amazon.com/bedrock/)
+
 
 ---
 # Architecute of the project :- 
