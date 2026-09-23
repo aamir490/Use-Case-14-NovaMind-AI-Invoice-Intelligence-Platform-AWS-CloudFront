@@ -9,6 +9,320 @@
 # Architecute of the project :- 
 ![Dashboard](project_pic/new-architecture.jpg)
 
+---
+
+## Understanding the Architecture
+
+Yes. The easiest way to understand **Diagram 1** is to stop looking at all the boxes at once. Your project is essentially an **invoice moving through an automated AI pipeline**.
+
+### The whole architecture in one line
+
+**User → CloudFront → React/S3 → Cognito → API Gateway → Lambda → S3 → SQS → Step Functions → Textract → Bedrock → Risk Scoring → DynamoDB/S3 → EventBridge/SNS → Dashboard**
+
+Now let's understand what actually happens.
+
+### 1. User opens NovaMind AI
+
+A finance user opens the application in a browser.
+
+The frontend is a **React + TypeScript application**. Static frontend files are stored in **Amazon S3**, while **Amazon CloudFront** delivers them to the user.
+
+So:
+
+**Browser → CloudFront → S3 React application**
+
+CloudFront gives you a fast HTTPS entry point rather than exposing the S3 bucket directly.
+
+---
+
+### 2. Amazon Cognito authenticates the user
+
+Before using protected functionality, the user signs in through **Amazon Cognito**.
+
+After successful authentication, Cognito provides a **JWT token**. The frontend sends this token with API requests.
+
+Conceptually:
+
+**User login → Cognito → JWT → Frontend**
+
+This allows your backend to know who is making the request and supports tenant/user isolation.
+
+---
+
+### 3. Frontend communicates with API Gateway
+
+When the user wants to upload an invoice, check its status, view an invoice, or see analytics, the React frontend calls **Amazon API Gateway**.
+
+Your diagram shows endpoints such as:
+
+```text
+POST /invoices/upload-url
+GET  /invoices
+GET  /invoices/{id}
+GET  /invoices/{id}/status
+DELETE /invoices/{id}
+GET  /analytics/*
+```
+
+API Gateway therefore acts as the **secure entry point to the backend APIs**.
+
+---
+
+### 4. Upload Lambda creates a pre-signed S3 URL
+
+This is an important architecture decision.
+
+The browser does **not send the entire invoice through API Gateway/Lambda**.
+
+Instead:
+
+**Frontend → API Gateway → Upload Lambda**
+
+The Lambda creates the invoice/job metadata and returns a temporary **pre-signed S3 URL**.
+
+Then the browser uploads the PDF/PNG/JPG/TIFF **directly to S3**.
+
+So the flow is:
+
+**Browser → request upload URL → Lambda → pre-signed URL → Browser → S3**
+
+This is more scalable than sending large invoice files through your backend.
+
+---
+
+### 5. S3 starts the event-driven pipeline
+
+Once the invoice arrives in the **S3 Invoice Uploads Bucket**, an `ObjectCreated` event is generated.
+
+Instead of immediately doing all the AI processing, the event is placed into **Amazon SQS**.
+
+So:
+
+**S3 → SQS**
+
+Why SQS?
+
+Because it **decouples file upload from processing**. If 500 invoices arrive together, they can wait safely in the queue while workers process them.
+
+Your architecture also includes a **Dead-Letter Queue (DLQ)**. Messages that repeatedly fail can be isolated instead of being lost.
+
+---
+
+### 6. Lambda starts Step Functions
+
+An **SQS-triggered Lambda** reads messages from the queue.
+
+It creates/updates the processing job and starts an **AWS Step Functions Express workflow**.
+
+Now Step Functions becomes the **orchestrator**.
+
+Think of Step Functions as the manager saying:
+
+> "First run OCR. When that's finished, run AI analysis. Then calculate risk. Finally save everything."
+
+So:
+
+**SQS → Trigger Lambda → Step Functions**
+
+---
+
+### 7. Stage 1 — OCR with Amazon Textract
+
+The first major processing stage is invoice extraction.
+
+**Step Functions → OCR Lambda → Amazon Textract**
+
+The OCR Lambda invokes **Amazon Textract `AnalyzeExpense`**.
+
+Suppose the uploaded invoice contains:
+
+```text
+Invoice: INV-1028
+Vendor: ABC Technologies
+Date: 20/09/2026
+Total: ₹85,000
+Tax: ₹15,300
+```
+
+Textract converts information from the document into structured machine-readable data.
+
+This means your application no longer has only an image/PDF. It now has usable invoice fields.
+
+---
+
+### 8. Stage 2 — Generative AI with Amazon Bedrock
+
+Now comes the GenAI part.
+
+The extracted invoice information is passed to the **AI Analysis Lambda**, which invokes **Amazon Bedrock using Amazon Nova Micro**.
+
+Conceptually:
+
+**Textract output → AI Lambda → Bedrock Nova Micro**
+
+Bedrock analyzes the invoice for things such as anomalies, suspicious patterns and useful explanations/insights.
+
+For example, the AI layer might identify something like:
+
+```text
+Anomaly:
+Invoice amount significantly differs
+from normal vendor transactions.
+Confidence: 0.91
+```
+
+So there's an important distinction:
+
+**Textract = extracts information**
+
+**Bedrock = understands/analyzes information**
+
+That's a very good distinction to explain in an interview.
+
+---
+
+### 9. Stage 3 — Deterministic Risk Scoring
+
+After AI analysis, another Lambda calculates the invoice's **risk score**.
+
+This is particularly useful architecturally because you aren't relying entirely on an LLM.
+
+The system combines:
+
+**AI findings + deterministic business rules**
+
+For example, rules can consider missing fields, duplicate items, unusual amounts or other defined conditions.
+
+The result could conceptually be:
+
+```text
+Risk Score: 82/100
+Risk Level: HIGH
+```
+
+So you can explain:
+
+> "Bedrock performs semantic AI analysis, while a deterministic rules engine calculates the final risk score."
+
+That sounds much better technically than saying *"AI decides whether an invoice is fraudulent."*
+
+---
+
+### 10. Results are stored
+
+After processing, the **Store Results Lambda** persists the final result.
+
+Your architecture uses both **DynamoDB and S3**, but for different purposes.
+
+**DynamoDB** stores structured application information such as invoice metadata, status, OCR fields, anomalies, risk scores and processing-job state.
+
+**S3 processed storage** holds larger processed artifacts such as extracted text, JSON documents and analysis output.
+
+Conceptually:
+
+**Processing → DynamoDB + S3**
+
+---
+
+### 11. High-risk invoice alerts
+
+Suppose the resulting invoice is:
+
+**Risk Level = HIGH**
+
+The application can publish a high-risk event through **Amazon EventBridge**.
+
+EventBridge routes the event to **Amazon SNS**, which can notify appropriate stakeholders.
+
+So:
+
+**High-risk invoice → EventBridge → SNS → Alert**
+
+This makes the architecture **event-driven** rather than requiring someone to continuously check the dashboard.
+
+---
+
+### 12. User sees the result
+
+Meanwhile, the React frontend can call the API to check processing status and retrieve completed invoice results.
+
+So the user eventually sees:
+
+**Invoice → Processing status → OCR data → AI analysis → anomalies → risk score → analytics**
+
+This completes the loop back to the frontend.
+
+---
+
+### Why there are CloudWatch, X-Ray and IAM at the bottom
+
+Those aren't additional processing stages. They support the entire architecture.
+
+**IAM** controls what each AWS component is permitted to do using least-privilege roles.
+
+**CloudWatch** collects Lambda/API/application logs and operational metrics.
+
+**AWS X-Ray** provides distributed tracing so you can follow requests through multiple serverless components.
+
+---
+
+### The story you should remember
+
+Don't memorize 20 AWS services.
+
+Remember **5 blocks**:
+
+```
+UPLOAD
+User → CloudFront → React → Cognito → API Gateway → Lambda → S3
+
+        ↓
+
+QUEUE
+S3 → SQS
+
+        ↓
+
+PROCESS
+SQS → Lambda → Step Functions
+
+        ↓
+
+INTELLIGENCE
+Textract → Bedrock → Risk Scoring
+
+        ↓
+
+RESULT
+DynamoDB/S3 → EventBridge/SNS → React Dashboard
+```
+
+### Interview version
+
+If an interviewer says **"Aamir, explain the architecture of your invoice project,"** you can say:
+
+> "NovaMind AI Invoice Intelligence is an event-driven serverless application on AWS.
+>
+> The React frontend is hosted on S3 and delivered through CloudFront, while Cognito handles user authentication. The frontend communicates with the backend through API Gateway.
+>
+> When a user uploads an invoice, a Lambda generates a pre-signed S3 URL, allowing the browser to upload the document directly to S3.
+>
+> The S3 event is sent through SQS to decouple ingestion from processing. An SQS-triggered Lambda then starts an AWS Step Functions workflow.
+>
+> Step Functions orchestrates the processing pipeline. Amazon Textract first extracts structured invoice information. The extracted information is then analyzed using Amazon Bedrock with Nova Micro for AI-based anomaly detection. After that, a deterministic Lambda-based rules engine calculates the final risk score.
+>
+> The results and processing state are stored using DynamoDB and S3. For high-risk invoices, EventBridge routes events to SNS for notifications.
+>
+> Finally, the React dashboard retrieves the processed results through the API and displays invoice details, anomalies, risk scores and analytics. CloudWatch and X-Ray provide observability, while IAM provides least-privilege access."
+
+The **single most important flow to memorize** is:
+
+**S3 → SQS → Step Functions → Textract → Bedrock → Risk Scoring → DynamoDB → EventBridge/SNS**
+
+Once you understand *why each service is there*, you won't need to memorize the interview answer word-for-word.
+
+---
+
 ## Screenshots
 
 ### LoginPage
