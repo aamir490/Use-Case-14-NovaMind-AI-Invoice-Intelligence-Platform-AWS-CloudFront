@@ -1,0 +1,2848 @@
+# NovaMind AI Invoice Intelligence Platform — Project Analysis Report
+
+**Analysis date:** 26 September 2026  
+**Method:** Read-only inspection of source code, infrastructure, configuration, workflows, tests, documentation, and relevant images.
+
+**No files were created, modified, deleted, renamed, or moved. No packages were installed, deployments performed, or application requests sent to AWS.** The final Git status was clean.
+
+Builds and tests were not executed. Test findings below come from source inspection, not a claimed successful test run. Historical screenshots and deployment transcripts support past activity; they do not establish current AWS availability.
+
+---
+
+## 1. Executive Summary
+
+NovaMind AI is an **event-driven, serverless invoice analysis application** with a React frontend and Python AWS Lambda backend.
+
+It addresses a practical problem: invoices arrive as images or PDFs, while reviewers need searchable fields, explanations of suspicious content, and a consistent way to prioritize review.
+
+The implemented processing path is:
+
+1. A user authenticates through Amazon Cognito.
+2. The browser requests a temporary S3 upload URL.
+3. The browser uploads the invoice directly to S3.
+4. S3 sends an event to SQS.
+5. A trigger Lambda starts a Step Functions Express workflow.
+6. Textract extracts invoice fields and text.
+7. Bedrock Nova Micro analyzes the extracted content.
+8. Python rules combine deterministic checks with AI findings.
+9. Results are stored in DynamoDB, with extracted text in S3.
+10. The frontend reads status, invoice details, and aggregate analytics.
+
+The repository contains substantial implementation: eight application Lambda functions, five CDK stacks, a frontend, unit tests, and GitHub Actions workflows.
+
+**Maturity assessment:** a substantial prototype or demonstration application with production-oriented foundations. It is **not defensibly production-ready** from the inspected evidence.
+
+The most important gaps are:
+
+- Missing ownership verification on the processing-job status fallback.
+- Browser query caches that are not separated or cleared by user.
+- Duplicate processing and job-reset risks.
+- Incomplete EventBridge/SNS alert wiring.
+- Weak validation of model output.
+- Risk scores that can look reassuring when AI analysis fails.
+- Financial rules that can misinterpret legitimate invoices.
+- Frontend polling that does not reliably refresh completed invoice details.
+- A broken OCR test import.
+- Deployment packaging and configuration reproducibility problems.
+
+This is **Generative AI inference**, not RAG, autonomous Agentic AI, or an ML training/MLOps platform.
+
+---
+
+## 2. Project Overview
+
+### Purpose and likely users
+
+The application converts invoice documents into structured records and review signals.
+
+Likely users are finance staff, accounts-payable reviewers, auditors, or small-business operators. These roles are inferred from the interface and workflow; the repository does not establish a real customer base.
+
+### Implemented capabilities
+
+- Email registration, confirmation, sign-in, and sign-out.
+- Authenticated API requests.
+- Direct upload of supported document MIME types to S3.
+- Background OCR and AI analysis.
+- Deterministic invoice checks.
+- Risk scores from 0 to 100.
+- LOW, MEDIUM, and HIGH risk classifications.
+- Invoice listing and detail views.
+- Invoice deletion.
+- Processing-status endpoint and frontend polling.
+- Risk, vendor, and anomaly analytics.
+- Infrastructure definitions and deployment workflow files.
+
+### Partial capabilities
+
+- User isolation: invoice access is scoped, but job-status and browser-cache gaps remain.
+- Processing-status experience: jobs exist, but the list primarily exposes completed invoice records.
+- Date filtering: visible in the frontend, ignored by the backend.
+- Automatic result display: status polling exists, but detail refresh is not connected to completion.
+- Notifications: publisher, rule, and topic exist, but their wiring is incomplete.
+- CI/CD: workflow definitions exist; operational configuration and successful runs are unverified.
+- Schema validation: Pydantic models exist but are not used to validate the main pipeline.
+
+### What it does not implement
+
+- Invoice payment or accounting-ledger posting.
+- ERP integration.
+- Human approval, rejection, correction, or reassignment workflows.
+- Retrieval over historical invoices for AI reasoning.
+- Vendor-price databases or verified tax-reference lookups.
+- Embeddings or a vector database.
+- Autonomous tool selection.
+- LangChain or LangGraph.
+- Model training, fine-tuning, experiment tracking, or drift detection.
+- Demonstrated fraud-detection accuracy.
+- Verified production capacity, availability, or cost.
+
+The output is best described as **invoice review assistance**, not a final determination that fraud occurred.
+
+---
+
+## 3. Technology Stack
+
+### Frontend
+
+**React 18 and TypeScript**
+
+React implements the login, dashboard, invoice list, invoice details, and analytics pages. TypeScript describes API response shapes and UI data.
+
+Its practical role is a browser application with reusable components. The repository does not independently establish the original selection process.
+
+**Vite 5**
+
+Vite runs the local frontend on port 5173 and builds static assets. The build script runs TypeScript checking before Vite compilation.
+
+**React Router**
+
+Defines browser routes and the authenticated layout. The protected-route component controls navigation, while actual backend authentication is enforced by API Gateway.
+
+**AWS Amplify**
+
+Configures Cognito and performs sign-up, confirmation, sign-in, session retrieval, token retrieval, and sign-out.
+
+**Axios**
+
+Sends authenticated API requests and uploads invoice bytes to a presigned S3 URL. These are separate paths: the S3 upload does not pass through the API client.
+
+**TanStack React Query**
+
+Caches backend data, retries queries, and polls invoice status. Its user-independent query keys create an account-switching concern.
+
+**Zustand**
+
+Maintains in-memory authentication display state, invoice filters, and active upload progress.
+
+**Tailwind CSS, Recharts, date-fns, and clsx**
+
+Provide styling, charts, date formatting, and conditional CSS classes.
+
+### Backend
+
+**Python 3.12**
+
+The runtime configured for the eight application Lambdas.
+
+**Boto3 and botocore**
+
+Provide AWS service clients and AWS exception handling for S3, DynamoDB, Textract, Bedrock, Step Functions, and EventBridge.
+
+**Pydantic**
+
+Defines intended data models, including invoices, anomalies, jobs, and pipeline payloads. The handlers primarily pass dictionaries and do not instantiate these models.
+
+Therefore, Pydantic is an available modeling dependency, **not an enforced validation boundary**.
+
+### Infrastructure and delivery
+
+**AWS CDK v2 with TypeScript**
+
+Defines five CloudFormation stacks. Infrastructure package versions include `aws-cdk-lib` 2.266.0 and CDK CLI 2.1138.0.
+
+**GitHub Actions**
+
+Defines backend tests and deployment, frontend build and deployment, and pull-request checks.
+
+**PowerShell and AWS CLI**
+
+Support documented manual deployment, Lambda-layer repairs, and log inspection.
+
+**Docker**
+
+Appears as a CDK dependency-bundling fallback. There is no application Dockerfile or ECS/Kubernetes deployment.
+
+### Testing
+
+**pytest and pytest-cov**
+
+Used by backend test workflows.
+
+**Moto**
+
+Listed as a test dependency, but the inspected tests do not implement a mocked end-to-end AWS pipeline.
+
+---
+
+## 4. Project Structure and Evidence Map
+
+The following evidence references are reused throughout this report.
+
+### Frontend evidence
+
+- **F1 — Entry point and routing:** [main.tsx](E:/GenAi-Project-Cloudage/Trigger_OCR_Function_FM_NoSQL/new_project/Trigger_OCR_Function_FM_NoSQL/frontend/src/main.tsx), [App.tsx](E:/GenAi-Project-Cloudage/Trigger_OCR_Function_FM_NoSQL/new_project/Trigger_OCR_Function_FM_NoSQL/frontend/src/App.tsx).
+- **F2 — Authentication:** [auth.ts](E:/GenAi-Project-Cloudage/Trigger_OCR_Function_FM_NoSQL/new_project/Trigger_OCR_Function_FM_NoSQL/frontend/src/services/auth.ts), [LoginPage.tsx](E:/GenAi-Project-Cloudage/Trigger_OCR_Function_FM_NoSQL/new_project/Trigger_OCR_Function_FM_NoSQL/frontend/src/pages/LoginPage.tsx).
+- **F3 — API and upload services:** [api.ts](E:/GenAi-Project-Cloudage/Trigger_OCR_Function_FM_NoSQL/new_project/Trigger_OCR_Function_FM_NoSQL/frontend/src/services/api.ts), [upload.ts](E:/GenAi-Project-Cloudage/Trigger_OCR_Function_FM_NoSQL/new_project/Trigger_OCR_Function_FM_NoSQL/frontend/src/services/upload.ts).
+- **F4 — Query and upload hooks:** [useInvoices.ts](E:/GenAi-Project-Cloudage/Trigger_OCR_Function_FM_NoSQL/new_project/Trigger_OCR_Function_FM_NoSQL/frontend/src/hooks/useInvoices.ts), [useAnalytics.ts](E:/GenAi-Project-Cloudage/Trigger_OCR_Function_FM_NoSQL/new_project/Trigger_OCR_Function_FM_NoSQL/frontend/src/hooks/useAnalytics.ts), [useUpload.ts](E:/GenAi-Project-Cloudage/Trigger_OCR_Function_FM_NoSQL/new_project/Trigger_OCR_Function_FM_NoSQL/frontend/src/hooks/useUpload.ts).
+- **F5 — State and logout:** [store/index.ts](E:/GenAi-Project-Cloudage/Trigger_OCR_Function_FM_NoSQL/new_project/Trigger_OCR_Function_FM_NoSQL/frontend/src/store/index.ts), [Header.tsx](E:/GenAi-Project-Cloudage/Trigger_OCR_Function_FM_NoSQL/new_project/Trigger_OCR_Function_FM_NoSQL/frontend/src/components/layout/Header.tsx).
+- **F6 — Invoice UI:** [InvoiceList.tsx](E:/GenAi-Project-Cloudage/Trigger_OCR_Function_FM_NoSQL/new_project/Trigger_OCR_Function_FM_NoSQL/frontend/src/components/invoices/InvoiceList.tsx), [InvoiceDetail.tsx](E:/GenAi-Project-Cloudage/Trigger_OCR_Function_FM_NoSQL/new_project/Trigger_OCR_Function_FM_NoSQL/frontend/src/components/invoices/InvoiceDetail.tsx), [InvoiceDetailPage.tsx](E:/GenAi-Project-Cloudage/Trigger_OCR_Function_FM_NoSQL/new_project/Trigger_OCR_Function_FM_NoSQL/frontend/src/pages/InvoiceDetailPage.tsx).
+- **F7 — Frontend manifest:** [package.json](E:/GenAi-Project-Cloudage/Trigger_OCR_Function_FM_NoSQL/new_project/Trigger_OCR_Function_FM_NoSQL/frontend/package.json).
+
+### Backend evidence
+
+- **B1 — Upload API:** [upload.py](E:/GenAi-Project-Cloudage/Trigger_OCR_Function_FM_NoSQL/new_project/Trigger_OCR_Function_FM_NoSQL/backend/lambdas/api/upload.py).
+- **B2 — Invoice API:** [invoices.py](E:/GenAi-Project-Cloudage/Trigger_OCR_Function_FM_NoSQL/new_project/Trigger_OCR_Function_FM_NoSQL/backend/lambdas/api/invoices.py).
+- **B3 — Analytics API:** [analytics.py](E:/GenAi-Project-Cloudage/Trigger_OCR_Function_FM_NoSQL/new_project/Trigger_OCR_Function_FM_NoSQL/backend/lambdas/api/analytics.py).
+- **B4 — Queue bridge:** [sqs_trigger/handler.py](E:/GenAi-Project-Cloudage/Trigger_OCR_Function_FM_NoSQL/new_project/Trigger_OCR_Function_FM_NoSQL/backend/lambdas/sqs_trigger/handler.py).
+- **B5 — OCR:** [ocr/handler.py](E:/GenAi-Project-Cloudage/Trigger_OCR_Function_FM_NoSQL/new_project/Trigger_OCR_Function_FM_NoSQL/backend/lambdas/ocr/handler.py), [ocr_parser.py](E:/GenAi-Project-Cloudage/Trigger_OCR_Function_FM_NoSQL/new_project/Trigger_OCR_Function_FM_NoSQL/backend/lambdas/ocr/ocr_parser.py).
+- **B6 — AI:** [ai_analysis/handler.py](E:/GenAi-Project-Cloudage/Trigger_OCR_Function_FM_NoSQL/new_project/Trigger_OCR_Function_FM_NoSQL/backend/lambdas/ai_analysis/handler.py), [prompt_builder.py](E:/GenAi-Project-Cloudage/Trigger_OCR_Function_FM_NoSQL/new_project/Trigger_OCR_Function_FM_NoSQL/backend/lambdas/ai_analysis/prompt_builder.py).
+- **B7 — Risk:** [rules.py](E:/GenAi-Project-Cloudage/Trigger_OCR_Function_FM_NoSQL/new_project/Trigger_OCR_Function_FM_NoSQL/backend/lambdas/risk_scoring/rules.py), [risk_scoring/handler.py](E:/GenAi-Project-Cloudage/Trigger_OCR_Function_FM_NoSQL/new_project/Trigger_OCR_Function_FM_NoSQL/backend/lambdas/risk_scoring/handler.py).
+- **B8 — Persistence and events:** [store_results/handler.py](E:/GenAi-Project-Cloudage/Trigger_OCR_Function_FM_NoSQL/new_project/Trigger_OCR_Function_FM_NoSQL/backend/lambdas/store_results/handler.py).
+- **B9 — Database helpers:** [shared/db.py](E:/GenAi-Project-Cloudage/Trigger_OCR_Function_FM_NoSQL/new_project/Trigger_OCR_Function_FM_NoSQL/backend/lambdas/shared/db.py).
+- **B10 — Responses and identity:** [shared/response.py](E:/GenAi-Project-Cloudage/Trigger_OCR_Function_FM_NoSQL/new_project/Trigger_OCR_Function_FM_NoSQL/backend/lambdas/shared/response.py).
+- **B11 — Models:** [shared/models.py](E:/GenAi-Project-Cloudage/Trigger_OCR_Function_FM_NoSQL/new_project/Trigger_OCR_Function_FM_NoSQL/backend/lambdas/shared/models.py).
+- **B12 — Legacy implementation:** [lambda_function.py](E:/GenAi-Project-Cloudage/Trigger_OCR_Function_FM_NoSQL/new_project/Trigger_OCR_Function_FM_NoSQL/lambda_function.py).
+
+### Infrastructure and supporting evidence
+
+- **I1 — Stack assembly:** [infrastructure/bin/app.ts](E:/GenAi-Project-Cloudage/Trigger_OCR_Function_FM_NoSQL/new_project/Trigger_OCR_Function_FM_NoSQL/infrastructure/bin/app.ts).
+- **I2 — Storage:** [storage-stack.ts](E:/GenAi-Project-Cloudage/Trigger_OCR_Function_FM_NoSQL/new_project/Trigger_OCR_Function_FM_NoSQL/infrastructure/lib/storage-stack.ts).
+- **I3 — Authentication:** [auth-stack.ts](E:/GenAi-Project-Cloudage/Trigger_OCR_Function_FM_NoSQL/new_project/Trigger_OCR_Function_FM_NoSQL/infrastructure/lib/auth-stack.ts).
+- **I4 — Processing:** [processing-stack.ts](E:/GenAi-Project-Cloudage/Trigger_OCR_Function_FM_NoSQL/new_project/Trigger_OCR_Function_FM_NoSQL/infrastructure/lib/processing-stack.ts).
+- **I5 — API:** [api-stack.ts](E:/GenAi-Project-Cloudage/Trigger_OCR_Function_FM_NoSQL/new_project/Trigger_OCR_Function_FM_NoSQL/infrastructure/lib/api-stack.ts).
+- **I6 — Frontend hosting:** [frontend-stack.ts](E:/GenAi-Project-Cloudage/Trigger_OCR_Function_FM_NoSQL/new_project/Trigger_OCR_Function_FM_NoSQL/infrastructure/lib/frontend-stack.ts).
+- **I7 — Separate workflow specification:** [processing-pipeline.json](E:/GenAi-Project-Cloudage/Trigger_OCR_Function_FM_NoSQL/new_project/Trigger_OCR_Function_FM_NoSQL/backend/step-functions/processing-pipeline.json).
+- **C1 — CI/CD:** [backend.yml](E:/GenAi-Project-Cloudage/Trigger_OCR_Function_FM_NoSQL/new_project/Trigger_OCR_Function_FM_NoSQL/.github/workflows/backend.yml), [frontend.yml](E:/GenAi-Project-Cloudage/Trigger_OCR_Function_FM_NoSQL/new_project/Trigger_OCR_Function_FM_NoSQL/.github/workflows/frontend.yml), [pr-checks.yml](E:/GenAi-Project-Cloudage/Trigger_OCR_Function_FM_NoSQL/new_project/Trigger_OCR_Function_FM_NoSQL/.github/workflows/pr-checks.yml).
+- **T1 — Tests:** [backend/tests/unit](E:/GenAi-Project-Cloudage/Trigger_OCR_Function_FM_NoSQL/new_project/Trigger_OCR_Function_FM_NoSQL/backend/tests/unit).
+- **D1 — Main documentation:** [README.md](E:/GenAi-Project-Cloudage/Trigger_OCR_Function_FM_NoSQL/new_project/Trigger_OCR_Function_FM_NoSQL/README.md), [real_architecture.md](E:/GenAi-Project-Cloudage/Trigger_OCR_Function_FM_NoSQL/new_project/Trigger_OCR_Function_FM_NoSQL/real_architecture.md).
+- **D2 — Deployment notes:** [steps-final-v2.md](E:/GenAi-Project-Cloudage/Trigger_OCR_Function_FM_NoSQL/new_project/Trigger_OCR_Function_FM_NoSQL/steps-final-v2.md), [project-public.md](E:/GenAi-Project-Cloudage/Trigger_OCR_Function_FM_NoSQL/new_project/Trigger_OCR_Function_FM_NoSQL/project-public.md).
+- **D3 — Existing interview narrative:** [interview2.md](E:/GenAi-Project-Cloudage/Trigger_OCR_Function_FM_NoSQL/new_project/Trigger_OCR_Function_FM_NoSQL/interview2.md).
+
+### Important structural distinctions
+
+**The root Lambda is legacy.** The CDK application deploys functions from the backend Lambda directories, not B12.
+
+**The deployed workflow is defined in TypeScript.** I4 constructs the workflow with `DefinitionBody.fromChainable`. I7 is not loaded by that stack, and its failure handling differs.
+
+**The packaged shared layer matters.** I4 and I5 deploy a prebuilt layer directory. Its five first-party utility files matched the corresponding source files by hash during inspection.
+
+**Generated and third-party content was excluded from deep analysis.** The packaged native dependency metadata was inspected specifically to verify platform compatibility.
+
+---
+
+## 5. Visual Assets Found
+
+### Current architecture illustration
+
+**Asset:** [new-architecture.jpg](E:/GenAi-Project-Cloudage/Trigger_OCR_Function_FM_NoSQL/new_project/Trigger_OCR_Function_FM_NoSQL/project_pic/new-architecture.jpg)
+
+**Type:** Architecture and workflow illustration.
+
+It shows:
+
+- Browser, CloudFront, S3 frontend, and Cognito.
+- API Gateway with upload, invoice, and analytics Lambdas.
+- Direct S3 upload.
+- SQS and DLQ.
+- Step Functions Express.
+- OCR, AI, risk, and storage stages.
+- Textract and Nova Micro.
+- DynamoDB invoice/job storage.
+- Processed-text S3 storage.
+- EventBridge and SNS.
+- IAM, CloudWatch, and X-Ray.
+
+**Assessment:** This is the closest existing visual to the current source architecture.
+
+However:
+
+- SNS email delivery is only partial in code.
+- Least-privilege claims are stronger than the actual wildcard policies.
+- Some arrows and duplicated icons are confusing.
+- One icon/label pairing appears inconsistent: an SQS-style icon is labeled as processing-job DynamoDB storage.
+- The grouping boxes are conceptual zones, not implemented VPC or subnet boundaries.
+
+### Frontend screenshots
+
+All paths below are in the [project_pic directory](E:/GenAi-Project-Cloudage/Trigger_OCR_Function_FM_NoSQL/new_project/Trigger_OCR_Function_FM_NoSQL/project_pic).
+
+**Authentication screenshots**
+
+- `NovaMind-Ai-Invoice-Intelligence-Platform-loginpage.png`: registration form, despite the filename.
+- `NovaMind-Ai-Invoice-Intelligence-Platform-loginpage-signin-cloudfront-pic1.png`: sign-in page at a CloudFront address.
+- `NovaMind Ai Invoice Intelligence Platform-loginpage-cloudfront-pic1.png`: registration view at CloudFront.
+- `login_page.png`: local login page showing an incorrect-credentials error.
+- `NovaMind-Ai-Invoice-intelligence-Platfrom-verify-your-email.png`: a verification email in Gmail, including spam-folder placement.
+
+These support the visible authentication experience. They do not prove current authentication availability or reliable email delivery.
+
+**Dashboard screenshots**
+
+- `NovaMind-Ai-Invoice-Intelligence-Platform-dashboard-pic1.png`: empty dashboard.
+- `NovaMind-Ai-Invoice-Intelligence-Platform-dashboard-pic2.png`: dashboard with one completed invoice.
+- `NovaMind-Ai-Invoice-Intelligence-Platform-dashboard-pic4.png`: dashboard with 12 displayed invoices and aggregate risk charts.
+- `NovaMind-Ai-Invoice-Intelligence-Platform-dashboard-pic3.png`: actually an invoice-detail view, showing HIGH risk and extracted Zenith-related fields.
+
+The layouts match frontend components. The displayed times are not validated end-to-end benchmarks.
+
+**Invoice and analytics screenshots**
+
+- `NovaMind-Ai-invoice.png`: invoice details, line items, AI explanation, duplicate-item findings, and risk score 98.
+- `NovaMind-Ai-Invoice-Intelligence-Platform-invoices-tab-pic1.png`: list with status, risk, and date-filter controls.
+- `NovaMind_Ai_Invoice_Intelligence_Platform_analytics_tab_pic1.png`: summary cards and risk/vendor/anomaly charts.
+- `screencapture-localhost-5173-invoices-inv-20260914-1e43bfa8-2026-09-14-13_25_42.png`: another detailed result, including an amount expressed in words and an invalid-looking date.
+
+The date controls exist visually, but the backend does not implement their filtering.
+
+The screenshots also support limitations visible in code: raw OCR amounts remain strings, currency defaults to USD, and findings can include overlapping AI and deterministic anomalies.
+
+### AWS console screenshots
+
+Inspected assets:
+
+- `aws-api-gateway.png`
+- `aws-cloudformation-stack.png`
+- `aws-cloudformations.png`
+- `aws-cloudfront.png`
+- `aws-cognito.png`
+- `aws-cognito-users.png`
+- `aws-lmbda-functions.png`
+- `aws-sqs.png`
+- `aws-step-functions.png`
+
+They show historical infrastructure consistent with the stack names and service choices:
+
+- Five application stacks plus CDK bootstrap.
+- A REST API.
+- CloudFront with an S3 origin.
+- A Cognito pool and users.
+- Eight application Lambdas plus CDK helper functions.
+- A Standard SQS queue and DLQ.
+- An Express state machine with tracing enabled.
+
+The Step Functions screenshot shows no executions in its displayed view. It does not establish that no processing ever occurred.
+
+**Classification:** supporting historical deployment evidence; current deployment state **UNVERIFIED**.
+
+### Legacy diagram and database screenshot
+
+**Assets:**
+
+- [Serverless Invoice Processing & Anomaly Detection Pipeline.jpeg](<E:/GenAi-Project-Cloudage/Trigger_OCR_Function_FM_NoSQL/new_project/Trigger_OCR_Function_FM_NoSQL/archive/Serverless Invoice Processing & Anomaly Detection Pipeline.jpeg>)
+- [dynamodb_output.png](E:/GenAi-Project-Cloudage/Trigger_OCR_Function_FM_NoSQL/new_project/Trigger_OCR_Function_FM_NoSQL/archive/dynamodb_output.png)
+
+The diagram depicts the older single-Lambda S3 → Textract → Bedrock → DynamoDB/S3 flow. It aligns broadly with B12, not the current CDK pipeline.
+
+Its “Mock DynamoDB” label is misleading relative to B12, which constructs a real Boto3 DynamoDB resource.
+
+The database screenshot shows the old single-key invoice schema and free-text `llm_analysis` style.
+
+### Sample invoices
+
+The [invoices directory](E:/GenAi-Project-Cloudage/Trigger_OCR_Function_FM_NoSQL/new_project/Trigger_OCR_Function_FM_NoSQL/invoices) contains input examples, not a labeled evaluation dataset.
+
+The inspected [Zenith sample](E:/GenAi-Project-Cloudage/Trigger_OCR_Function_FM_NoSQL/new_project/Trigger_OCR_Function_FM_NoSQL/invoices/zenith-infotech-invoice.jpg) contains altered-looking totals, date inconsistencies, and conflicting payment information. It is useful for demonstration, but does not establish model accuracy.
+
+The README places this sample beside a result screenshot naming a different vendor. That pairing should not be treated as a verified input/output match.
+
+### Draw.io files
+
+- [archotect.drawio](E:/GenAi-Project-Cloudage/Trigger_OCR_Function_FM_NoSQL/new_project/Trigger_OCR_Function_FM_NoSQL/archotect.drawio) contains recognizable architecture labels but is truncated and fails XML parsing.
+- [Untitled Diagram.drawio](<E:/GenAi-Project-Cloudage/Trigger_OCR_Function_FM_NoSQL/new_project/Trigger_OCR_Function_FM_NoSQL/Untitled Diagram.drawio>) contains embedded markup rather than a clean, readily interpretable component graph.
+
+I found these visual assets, but I could not inspect their rendered contents in the current read-only workflow. Their source was inspected; no repaired or rendered files were created.
+
+---
+
+## 6. Current Architecture
+
+The current architecture is a **serverless web application with an asynchronous document-processing workflow**.
+
+It has separate function responsibilities, but “eight Lambdas” alone does not establish eight independently owned microservices.
+
+```text
+Browser
+  ├── CloudFront ── private S3 frontend
+  ├── Cognito authentication
+  │
+  └── API Gateway + Cognito authorizer
+        ├── Upload Lambda ── processing_jobs
+        │       └── returns presigned S3 PUT URL
+        ├── Invoices Lambda ── invoices / processing_jobs
+        └── Analytics Lambda ── tenant invoice queries
+
+Browser ── document bytes ── S3 uploads
+                               │
+                               ▼
+                              SQS ── repeated trigger failures ── DLQ
+                               │
+                               ▼
+                         Trigger Lambda
+                               │ StartExecution
+                               ▼
+                      Step Functions Express
+                      OCR → AI → Risk → Store
+                       │     │            ├── DynamoDB invoices
+                   Textract Bedrock       ├── DynamoDB jobs
+                                          ├── S3 extracted text
+                                          └── EventBridge publication
+                                               [alert wiring incomplete]
+
+Browser ── status/detail/analytics requests ── API Gateway
+```
+
+### Infrastructure ownership
+
+- **StorageStack:** upload, processed, and an additional frontend bucket; two DynamoDB tables; SQS and DLQ; S3 notification.
+- **AuthStack:** Cognito pool and browser client.
+- **ProcessingStack:** five processing/trigger Lambdas, shared layer, workflow, alert topic/rule, and DLQ alarm.
+- **ApiStack:** three API Lambdas, shared layer, REST API, authorization, and CORS.
+- **FrontendStack:** a separate hosting bucket, CloudFront, optional static deployment, and an unused additional shared layer.
+
+The StorageStack frontend bucket is not the bucket used by FrontendStack’s CloudFront distribution.
+
+### Classification
+
+**IMPLEMENTED:** frontend, authenticated API definitions, direct upload, queue bridge, four-stage workflow, OCR/model calls, deterministic scoring, persistence, analytics.
+
+**PARTIAL:** tenant isolation, notifications, validation, UI refresh, lifecycle management, reproducible delivery.
+
+**DOCUMENTED/INTENDED:** confirmed email alerts, reliable automatic deployment, broad production-readiness claims.
+
+**FUTURE/PROPOSED:** agents, WebSockets, materialized analytics, multi-region extensions.
+
+**UNVERIFIED:** current AWS resources, model access, delivery subscriptions, CI secrets, live traffic, actual operational metrics.
+
+**NOT PRESENT:** RAG, embeddings, vector storage, autonomous agents, ML training.
+
+---
+
+## 7. Application / Request Flow
+
+### Flow A — Registration and login
+
+1. F1 configures Amplify before rendering.
+2. F2 exposes login, registration, and confirmation modes.
+3. Amplify calls Cognito.
+4. The frontend fetches the current user and session.
+5. Zustand records the user for UI rendering.
+6. The API interceptor retrieves the ID token and adds an Authorization header.
+7. API Gateway uses the Cognito authorizer.
+8. B10 extracts the validated `sub` claim as `tenant_id`.
+
+```text
+Login form → Amplify → Cognito
+                       ↓
+                  ID token/session
+                       ↓
+API request → Cognito authorizer → claims.sub → tenant_id
+```
+
+The frontend route guard is a UI control. Backend protection comes from API Gateway and application ownership checks.
+
+### Flow B — Upload and processing
+
+1. The upload UI accepts one selected file.
+2. F3 checks MIME type and a 10 MiB browser-side limit.
+3. `POST /invoices/upload-url` reaches B1.
+4. B1 derives the tenant from claims.
+5. It generates an ID resembling `inv_YYYYMMDD_<random-suffix>`.
+6. It creates `job_<invoice_id>` in PENDING state.
+7. It returns a five-minute presigned PUT URL.
+8. The browser uploads directly to the generated S3 key.
+9. S3 sends an ObjectCreated event for the `invoices/` prefix to SQS.
+10. B4 reads the first nested S3 record.
+11. B4 extracts tenant and invoice ID from the object key.
+12. It writes the job again and starts an Express execution.
+13. B5 calls Textract `analyze_expense`.
+14. The parser extracts the first expense document.
+15. B6 sends structured fields and raw text to Nova Micro.
+16. B7 computes risk and builds the combined anomaly list.
+17. B8 saves extracted text, writes the completed invoice, marks the job complete, and attempts event publication.
+
+### Flow C — Status and display
+
+```text
+Upload completes → navigate to invoice detail
+                         ├── detail query
+                         └── status query every 3 seconds
+```
+
+Before storage finishes, the detail query can return 404.
+
+The status query eventually stops on COMPLETED or FAILED, but it does not invalidate the detail query. Therefore, a successful pipeline does not guarantee that the displayed error or empty detail view automatically recovers.
+
+The failure banner also disappears for FAILED rather than presenting the job’s error message.
+
+### Flow D — Analytics
+
+Each analytics endpoint retrieves all invoices for the authenticated tenant through paginated DynamoDB **Query** calls.
+
+It calculates:
+
+- Total and completed invoice counts.
+- Risk-level counts.
+- Average score.
+- Average recorded processing time.
+- Daily score averages.
+- Vendor averages.
+- Anomaly-type counts.
+
+There is no separate aggregate store.
+
+### Flow E — Deletion
+
+1. Read the invoice using tenant and invoice ID.
+2. Attempt to delete the original S3 object.
+3. Log S3 deletion failure without stopping.
+4. Delete the DynamoDB invoice record.
+
+The job record, processed text, and historical S3 versions are not comprehensively removed by this flow.
+
+### Realistic scoring example
+
+Assume OCR returns:
+
+- Total: 100.
+- Line-item prices: 50 and 30.
+- All four required fields present.
+- A normal invoice number.
+- No duplicate descriptions.
+- One HIGH-severity AI anomaly.
+
+The deterministic math check adds 40. The AI anomaly adds 15.
+
+**Result: 55, MEDIUM.**
+
+This is an illustrative execution of the scoring formula, not a measured AWS run.
+
+---
+
+## 8. Project-Specific Technical Analysis
+
+### OCR behavior
+
+B5 calls synchronous Textract `AnalyzeExpense`.
+
+The parser:
+
+- Reads only `ExpenseDocuments[0]`.
+- Extracts invoice number, vendor, dates, total, subtotal, tax, and line items.
+- Retains values largely as strings.
+- Collects LINE block text.
+- Defaults currency to USD.
+- Does not preserve field-level confidence or coordinates.
+- Does not normalize dates or monetary values.
+
+PDF/TIFF acceptance does not establish arbitrary multipage support. AWS documents synchronous single-page PDF support and separate asynchronous expense-analysis operations. [AWS Textract documentation](https://docs.aws.amazon.com/textract/latest/dg/analyzing-document-expense.html), [single-page PDF support](https://aws.amazon.com/about-aws/whats-new/2022/01/amazon-textract-pdf-processing-jpeg-encoded-images/).
+
+### AI implementation
+
+**Model:** `us.amazon.nova-micro-v1:0`  
+**Provider:** Amazon Bedrock  
+**Invocation:** `bedrock_runtime.invoke_model`  
+**Input:** One user message containing structured fields and raw OCR text.  
+**Output target:** JSON with anomalies, summary, and confidence.
+
+Configuration:
+
+- `maxTokens`: 1500.
+- Temperature: 0.2.
+- Top-p: 0.9.
+- Up to five application-level attempts: the initial attempt plus four retries.
+
+There is no separate system-message object. The role instruction is inside the user prompt.
+
+### Parsing is not validation
+
+`_parse_json_response()` attempts:
+
+1. Direct JSON parsing.
+2. Removal of markdown fences.
+3. Extraction between the first opening and final closing brace.
+4. A fallback object when parsing fails.
+
+But valid JSON can still have the wrong shape.
+
+Examples:
+
+- A JSON list instead of an object.
+- `anomalies: null`.
+- Anomalies containing strings.
+- Missing or unsupported severities.
+- Confidence outside the intended range.
+
+B11 defines helpful types, but B6 does not apply them.
+
+### AI failure behavior
+
+Handled Bedrock errors produce:
+
+- Empty anomalies.
+- An “analysis unavailable” summary.
+- Confidence 0.
+
+The pipeline then continues through deterministic scoring and stores COMPLETED.
+
+This preserves extraction availability, but **completion and analysis quality are conflated**. A low score after AI failure should not be interpreted as equivalent to a fully analyzed low-risk invoice.
+
+### RAG and agents
+
+There is no database retrieval feeding historical context into the prompt.
+
+There are no embeddings, chunk retrieval, vector search, model-selected tools, or iterative agent decisions.
+
+Step Functions provides fixed orchestration. That does not make the model agentic.
+
+### Exact risk formula
+
+- Math discrepancy: **40**.
+- Missing invoice number: **8**.
+- Missing receipt date: **8**.
+- Missing total: **8**.
+- Missing vendor: **8**.
+- Purely numeric invoice number shorter than three digits: **10**.
+- Repeated normalized item description: **15**.
+- Each AI HIGH anomaly: **15**.
+- Each AI MEDIUM anomaly: **7**.
+- Each AI LOW or unrecognized severity: **3**.
+- Maximum score: **100**.
+
+Bands:
+
+- **LOW:** 0–29.
+- **MEDIUM:** 30–69.
+- **HIGH:** 70–100.
+
+### Financial limitations
+
+The math rule compares the sum of extracted `price` values directly with total.
+
+It does not explicitly reconcile:
+
+- Tax.
+- Discounts.
+- Shipping.
+- Credits.
+- Unit price versus line total.
+- Quantity.
+- Negative amounts.
+- Locale-specific decimal separators.
+
+Removing all characters except digits and periods can turn negative amounts positive and misinterpret some number formats.
+
+Amounts expressed entirely in words become zero in the parser used by this rule, which can skip the discrepancy check.
+
+The duplicate rule treats repeated descriptions as duplicates even when quantities, prices, or legitimate repeated purchases differ.
+
+AI and deterministic findings can describe the same issue and both contribute to the score.
+
+### Rate limiter
+
+The limiter is local to one warm Lambda environment.
+
+It does not coordinate across concurrent instances. It also records the pre-sleep timestamp after sleeping, weakening the intended rolling-window behavior.
+
+Waiting inside a Lambda with a 60-second timeout can itself cause timeout risk.
+
+### Processing time
+
+The stored timing sums OCR time, AI time, and a partial storage interval.
+
+It excludes queue delay, trigger time, orchestration overhead, risk-stage timing, and operations occurring after the timing calculation.
+
+It is **not end-to-end user latency**.
+
+---
+
+## 9. Data / State / Memory
+
+### Durable storage
+
+**Upload S3 bucket**
+
+Stores originals under a tenant-prefixed generated key. Versioning is enabled.
+
+**Processed S3 bucket**
+
+Stores extracted text under:
+
+```text
+processed-text/{tenant_id}/{invoice_id}.txt
+```
+
+The current storage handler does not write complete OCR and analysis JSON artifacts to this bucket.
+
+**Invoices table**
+
+- Partition key: `tenant_id`.
+- Sort key: `invoice_id`.
+- Contains completed invoice data, findings, score, explanation, and object references.
+
+**Processing-jobs table**
+
+- Partition key: `job_id`.
+- Contains tenant, invoice ID, status, stage, and timestamps.
+
+The table enables TTL on `ttl`, but `create_job()` does not populate that field. Automatic expiry is therefore incomplete.
+
+### Workflow state
+
+The workflow carries a growing JSON payload containing identifiers, OCR data, AI output, and risk findings.
+
+There is no artifact-pointer strategy for large intermediate results. Larger documents therefore increase workflow-payload and final-record size risk.
+
+### Temporary state
+
+- Zustand authentication display state.
+- Upload-progress entries.
+- Invoice filters.
+- React Query caches.
+- Per-Lambda rate-limiter timestamps.
+
+These are not durable business records.
+
+### Restart behavior
+
+A page reload recreates UI state and query caches, then attempts Cognito session restoration.
+
+Completed records remain in AWS storage, assuming the resources still exist.
+
+Active upload progress is lost on reload. There is no durable frontend recovery mechanism for the upload list.
+
+A cold Lambda environment resets the local limiter.
+
+### No conversational memory
+
+The AI call is independent per invoice. There is no chat history, conversation state, or long-term model memory.
+
+---
+
+## 10. AWS / Cloud
+
+### CURRENT — implemented definitions and calls
+
+**S3:** originals, extracted text, static frontend, and infrastructure assets.
+
+**CloudFront:** frontend distribution, private S3 access through OAC, HTTPS redirect, SPA fallback.
+
+**Cognito:** identity pool of users, browser app client, email confirmation, password rules, SRP authentication.
+
+**API Gateway:** REST API, stage `v1`, Cognito authorizer, Lambda integrations, CORS, access logging, tracing.
+
+**Lambda:** eight application functions; Python 3.12, ARM64.
+
+**SQS:** upload-event buffer and trigger redelivery. Visibility timeout is 120 seconds.
+
+**DLQ:** max receive count 3; retention configured for 14 days.
+
+**Step Functions:** Express, sequential four-stage workflow, five-minute timeout, retry/catch configuration.
+
+**Textract:** synchronous expense extraction.
+
+**Bedrock:** Nova Micro invocation.
+
+**DynamoDB:** on-demand invoice and job tables.
+
+**EventBridge/SNS:** publication attempt, HIGH-risk matching rule, topic, and DLQ alarm action.
+
+**CloudWatch/X-Ray:** explicit log groups, API logging, tracing flags, and one DLQ alarm.
+
+### DOCUMENTED/INTENDED
+
+- Confirmed email alert delivery.
+- Comprehensive least privilege.
+- Fully functioning automatic deployment.
+- Complete distributed request tracing.
+- Demonstrated production-scale resilience.
+
+### FUTURE/PROPOSED
+
+Documentation discusses WebSockets, materialized analytics, WAF, customer-managed keys, and multi-region extensions.
+
+These are not current implementation.
+
+### UNVERIFIED
+
+I could not verify from the repository:
+
+- Which resources are currently running.
+- Whether Bedrock access is currently enabled.
+- Whether an external custom event bus was manually created.
+- Whether SNS has confirmed subscribers.
+- Whether GitHub deployment credentials are configured.
+- Whether tracing produces a continuous cross-service trace.
+- Current service quotas, traffic, or bills.
+
+### Networking and availability
+
+No application VPC, private subnets, security groups, NAT gateway, load balancer, or private endpoints are defined.
+
+No application-level multi-region failover is defined.
+
+Managed services provide useful foundations, but this repository does not establish an application availability target or tested disaster-recovery plan.
+
+---
+
+## 11. Deployment
+
+### Local execution
+
+The frontend is designed to run through Vite on **5173**. Preview origin **4173** is also listed in CORS configuration.
+
+Local frontend execution still depends on configured AWS services. There is no complete local backend emulator or SAM template.
+
+### Configuration
+
+Frontend build-time values:
+
+- `VITE_API_URL`
+- `VITE_COGNITO_USER_POOL_ID`
+- `VITE_COGNITO_USER_POOL_CLIENT_ID`
+
+Backend values include:
+
+- `INVOICES_TABLE`
+- `JOBS_TABLE`
+- `UPLOADS_BUCKET`
+- `PROCESSED_BUCKET`
+- `BEDROCK_MODEL_ID`
+- `EVENTBRIDGE_BUS_NAME`
+- `STATE_MACHINE_ARN`
+- `ALLOWED_ORIGINS`
+
+CDK selects environment from context, defaults to `dev`, and defaults region to `us-east-1`.
+
+The root environment example is documentation. The handlers do not load it through a dotenv library.
+
+### Manual deployment path
+
+D2 describes:
+
+1. Installing dependencies.
+2. Building the shared Lambda layer.
+3. Bootstrapping CDK.
+4. Deploying storage/authentication.
+5. Deploying processing/API.
+6. Publishing and attaching replacement layers through repair scripts.
+7. Configuring frontend values.
+8. Building and deploying the frontend.
+9. Redeploying the API with `frontendUrl`.
+
+These are documented steps, not actions performed during this analysis.
+
+### Packaging concerns
+
+The prebuilt layer contains a Pydantic-core wheel tagged:
+
+```text
+cp312-cp312-win_amd64
+```
+
+The Lambdas target Linux ARM64.
+
+This dependency is incompatible with that target if imported. The current handlers do not import the Pydantic models, so this finding does **not** prove every current handler fails at startup.
+
+The frontend stack also creates an unused shared layer whose bundling copies utilities directly into `python/`, not `python/shared/`. Its build path can run host-platform package installation during synthesis.
+
+A clean build should produce compatible artifacts through one controlled process.
+
+### CI/CD implementation
+
+**Backend workflow**
+
+- Runs pytest with coverage.
+- Uses GitHub OIDC credential configuration.
+- Synthesizes CDK.
+- Deploys storage/auth and processing/API on eligible main-branch pushes.
+
+**Frontend workflow**
+
+- Type-checks and builds.
+- Uploads an artifact.
+- Syncs to S3.
+- Sets different caching for `index.html`.
+- Invalidates CloudFront.
+
+**PR workflow**
+
+- Runs backend tests.
+- Type-checks frontend.
+- Synthesizes infrastructure.
+
+### Delivery gaps
+
+- The backend deployment does not pass the CloudFront `frontendUrl` context, so it can revert API CORS to localhost-only configuration.
+- No first-class target-platform layer rebuild is present in CI.
+- The frontend hosting stack is not deployed by the backend workflow.
+- The OIDC trust role is referenced but not defined here.
+- Successful workflow execution is unverified.
+- The OCR test import prevents treating the test gate as healthy.
+- CDK static deployment gives all files long caching, while the frontend workflow handles `index.html` separately.
+- No explicit canary release or automated rollback strategy is defined.
+
+---
+
+## 12. Security
+
+### Implemented controls
+
+- Cognito authorizer attached to application API methods.
+- User ID taken from validated authorizer claims.
+- Tenant-prefixed generated upload keys.
+- Short-lived presigned URLs.
+- Explicit content-type allowlist.
+- Private S3 buckets.
+- Upload and processed bucket encryption configuration.
+- CloudFront OAC and HTTPS redirect.
+- Cognito password complexity and email confirmation.
+- Per-function IAM roles and resource grants.
+- API request-body tracing disabled.
+- GitHub OIDC workflow configuration instead of embedded AWS access keys.
+
+### High-priority gaps
+
+**Job-status ownership**
+
+B2 first performs a tenant-scoped invoice lookup, then retrieves `job_<invoice_id>` without comparing its `tenant_id` with the requester.
+
+Someone who knows another invoice ID may receive its job status, stage, or error details.
+
+**Browser cache isolation**
+
+F4 uses query keys without user identity. F5 signs out and clears auth state but not the query cache or upload/filter state.
+
+A second user in the same SPA session can receive cached data from the preceding session before or instead of a fresh request.
+
+**Upload enforcement**
+
+The size limit is browser-side. The backend does not verify uploaded content, actual object size, page count, or document structure before OCR.
+
+**Published demo credentials**
+
+Deployment notes contain explicit demo passwords. Their current validity is unverified. They should not be reused for a live account, and any still-valid published password should be rotated.
+
+### Other gaps
+
+- Bedrock invocation and EventBridge publication use wildcard resources.
+- No application-specific rate limits, tenant budgets, or processing concurrency controls.
+- No MFA configuration.
+- No role hierarchy or organization membership model.
+- No completed password-reset UI.
+- Broad S3 CORS.
+- API Gateway-generated errors always use the first allowed origin, which is localhost.
+- One unsupported-content-type response omits the request event needed for dynamic CORS.
+- No explicit security-header policy for the frontend.
+- No complete sensitive-data retention/deletion policy.
+- Step Functions error logs include execution data, which may contain invoice content.
+- A malformed AI response is logged partially.
+
+### Prompt injection
+
+Invoice text is untrusted and is concatenated into the same prompt as the task instructions.
+
+No explicit prompt-injection defense, guardrail configuration, or post-generation schema enforcement is implemented.
+
+The model cannot invoke tools here, but malicious document instructions could still alter findings or summaries.
+
+---
+
+## 13. Error Handling & Troubleshooting
+
+### Existing behavior
+
+**Upload/API failures**
+
+Handlers return JSON error responses for many failures. The analytics `ValueError` path is inconsistent: it returns a raw body without the shared response headers.
+
+**OCR failures**
+
+Textract client errors update the job and raise an OCR exception. Workflow catches attempt to mark the job failed.
+
+**AI failures**
+
+Selected Bedrock errors are converted into a nonfatal result. Network errors, timeouts, and wrong-shaped JSON are not all covered by that fallback.
+
+**Storage failures**
+
+S3 text-save and EventBridge client errors are treated as nonfatal. DynamoDB invoice/job write failures propagate.
+
+**Queue-trigger failures**
+
+The trigger raises an exception. The event-source configuration enables partial batch failures, but the handler does not return the required partial-failure structure. Batch size is currently one.
+
+### Critical boundary: DLQ coverage
+
+The trigger starts the workflow asynchronously and returns.
+
+A later OCR or storage failure does not automatically return the original SQS message to the queue.
+
+Therefore, the SQS DLQ primarily protects the **trigger/start handoff**, not every processing-stage failure.
+
+### Failure-state mismatch
+
+I4’s failure handler sets job status and a timestamp, but does not preserve the detailed stage/error fields present in I7.
+
+It also ends on a successful DynamoDB update instead of transitioning to an explicit Fail state. A workflow can therefore finish successfully at the orchestration level while the application job is marked FAILED.
+
+### Practical investigation order
+
+```text
+Browser request and invoice ID
+  → upload API
+  → S3 object
+  → SQS/trigger logs
+  → job record
+  → workflow logs
+  → OCR/AI/risk/store logs
+  → invoice record
+  → frontend query/cache behavior
+```
+
+`watch-pipeline.ps1` reads recent logs. It is a diagnostic utility, not an automated correctness test.
+
+---
+
+## 14. Testing & Quality
+
+### Tests that exist
+
+There are **44 test functions** covering:
+
+- Response helpers and tenant extraction.
+- Textract response parsing.
+- Prompt construction.
+- Deterministic risk rules.
+
+The tests are mostly small pure-function tests.
+
+### Verified static defect
+
+The OCR tests import:
+
+```text
+from parser import parse_expense_document
+```
+
+The implementation file is `ocr_parser.py`.
+
+The production OCR handler imports the correct module. The test suite does not.
+
+A normal run against the intended Python 3.12 environment is expected to fail collection unless an unrelated module happens to satisfy that import. This was not confirmed through execution.
+
+### Coverage weaknesses
+
+- Prompt tests verify text presence, not anomaly quality.
+- The “None values” prompt test can pass because other missing fields generate `N/A`; it does not prove supplied `None` values are normalized.
+- No model-response schema tests.
+- No job ownership tests.
+- No duplicate-event tests.
+- No storage partial-failure tests.
+- No notification-wiring tests.
+- No user-switch cache tests.
+- No frontend completion-refresh tests.
+- No load tests.
+- No labeled AI evaluation corpus.
+- No infrastructure assertion tests.
+- No verified end-to-end test.
+
+### Static quality tools
+
+- Strict frontend TypeScript options.
+- Type-check commands in CI.
+- ESLint script declared, but no project ESLint configuration was found in the mapped files.
+- No Python lint/type-check workflow identified.
+- Python dependency ranges are broad rather than fully locked.
+- Source and prebuilt dependencies coexist in the repository.
+
+**Test result:** not executed; no pass rate or coverage percentage claimed.
+
+---
+
+## 15. Cost & Scalability
+
+### Cost drivers
+
+- Textract requests/pages.
+- Bedrock input and output tokens.
+- Duplicate processing.
+- Lambda duration, including waits.
+- Step Functions executions and duration.
+- DynamoDB queries and writes.
+- S3 storage, versions, and requests.
+- API polling.
+- CloudWatch logs.
+- Frontend delivery and invalidations.
+
+The README’s monthly estimate is not a verified bill or current pricing calculation.
+
+### Likely scaling constraints
+
+**Downstream quotas**
+
+SQS buffers events, but the bridge launches workflows quickly. It does not limit active Textract or Bedrock operations.
+
+**Local rate limiting**
+
+Each Lambda environment has its own limiter. Increased concurrency increases aggregate request rate.
+
+**Analytics**
+
+Four analytics endpoints independently retrieve the tenant’s invoice collection. Cost and latency grow with stored data.
+
+**Tenant partition concentration**
+
+All invoices for a user share a partition-key value. High-volume tenants need workload testing.
+
+**Payload growth**
+
+OCR text and findings move through workflow state and into records without explicit size management.
+
+**Polling**
+
+Every open processing view can issue repeated API requests.
+
+### What should be measured
+
+- Upload-to-result p50/p95/p99 latency.
+- Queue age.
+- Stage durations.
+- OCR failure and empty-extraction rates.
+- AI availability and schema-validity rates.
+- Duplicate execution rate.
+- Cost per completed, fully analyzed invoice.
+- DynamoDB capacity consumption by endpoint.
+- Alert delivery success.
+- Accuracy of review prioritization.
+
+No capacity, throughput, or user-count claim is established by this repository.
+
+---
+
+## 16. What Is Good
+
+**STRENGTH:** File transfer is separated from API processing.  
+**EVIDENCE:** F3 and B1.  
+**WHY IT MATTERS:** The browser uploads directly to S3, keeping binary transfer out of application Lambda handlers.
+
+**STRENGTH:** Processing stages have clear responsibilities.  
+**EVIDENCE:** B5–B8 and I4.  
+**WHY IT MATTERS:** OCR, model analysis, scoring, and storage can be investigated independently.
+
+**STRENGTH:** Business rules complement model output.  
+**EVIDENCE:** B7.  
+**WHY IT MATTERS:** The final score is explainable as explicit contributions, even though the rules need refinement.
+
+**STRENGTH:** Infrastructure is represented in source.  
+**EVIDENCE:** I1–I6.  
+**WHY IT MATTERS:** Service relationships, permissions, storage, and runtime choices can be reviewed.
+
+**STRENGTH:** Identity is derived server-side.  
+**EVIDENCE:** B10 and I5.  
+**WHY IT MATTERS:** Invoice reads do not rely on a caller-supplied tenant field.
+
+**STRENGTH:** Important operational foundations exist.  
+**EVIDENCE:** I4/I5 log groups, tracing, catches, queue, DLQ, and alarm.  
+**WHY IT MATTERS:** Troubleshooting has more structure than a single opaque function.
+
+**STRENGTH:** The UI exposes underlying evidence.  
+**EVIDENCE:** F6 and inspected screenshots.  
+**WHY IT MATTERS:** Users can inspect extracted fields and findings rather than seeing only a score.
+
+---
+
+## 17. Problems / Gaps
+
+### 1. Job-status ownership is not enforced
+
+**PROBLEM:** Job fallback lookup ignores tenant ownership.  
+**EVIDENCE:** B2 `_get_status()`, B9 `get_job()`.  
+**WHY IT MATTERS:** Cross-user status/error disclosure.  
+**SEVERITY:** HIGH.
+
+### 2. Browser caches survive account changes
+
+**PROBLEM:** Query keys omit user identity; logout does not clear cached business data.  
+**EVIDENCE:** F4/F5.  
+**WHY IT MATTERS:** Shared-browser data exposure.  
+**SEVERITY:** HIGH.
+
+### 3. Processing is not idempotent
+
+**PROBLEM:** Unconditional job writes, random execution names, and no object-version deduplication.  
+**EVIDENCE:** B4/B9.  
+**WHY IT MATTERS:** Repeated costs, overwritten status, duplicate events, and nondeterministic final results.  
+**SEVERITY:** HIGH.
+
+### 4. Alert wiring is incomplete
+
+**PROBLEM:** Publisher uses custom bus `invoice-platform`; CDK rule is on the default bus. No custom bus or SNS subscription is defined.  
+**EVIDENCE:** B8/I4.  
+**WHY IT MATTERS:** HIGH-risk results may never generate the promised email.  
+**SEVERITY:** HIGH.
+
+AWS also documents that publishing to a nonexistent event bus can return HTTP 200 while dropping the event. A successful API response alone is insufficient. [AWS EventBridge documentation](https://docs.aws.amazon.com/eventbridge/latest/userguide/eb-putevents.html).
+
+### 5. Financial checks can be misleading
+
+**PROBLEM:** Totals are compared without explicit tax/discount/quantity semantics; currency defaults to USD.  
+**EVIDENCE:** B5/B7.  
+**WHY IT MATTERS:** False positives and missed discrepancies.  
+**SEVERITY:** HIGH.
+
+### 6. AI failure can appear as ordinary completion
+
+**PROBLEM:** Empty findings after AI failure still lead to COMPLETED and possibly LOW risk.  
+**EVIDENCE:** B6–B8.  
+**WHY IT MATTERS:** Users may overtrust an incomplete assessment.  
+**SEVERITY:** HIGH.
+
+### 7. Model output lacks schema validation
+
+**PROBLEM:** JSON decoding is treated as sufficient validation.  
+**EVIDENCE:** B6/B11.  
+**WHY IT MATTERS:** Wrong-shaped output can fail later stages or distort scores.  
+**SEVERITY:** HIGH.
+
+### 8. Deployment is not reliably reproducible
+
+**PROBLEM:** Prebuilt layer, incompatible native dependency, unused extra layer, and manual patch scripts.  
+**EVIDENCE:** I4–I6 and layer metadata.  
+**WHY IT MATTERS:** Clean builds can differ from the historical demo environment.  
+**SEVERITY:** HIGH for release readiness; current runtime impact depends on imported modules.
+
+### 9. Status polling does not refresh detail data
+
+**PROBLEM:** Completion does not invalidate the invoice query.  
+**EVIDENCE:** F4/F6.  
+**WHY IT MATTERS:** Successful processing can leave a stale error screen.  
+**SEVERITY:** MEDIUM.
+
+### 10. Pending/failed invoice lists are incomplete
+
+**PROBLEM:** Upload creates a job; invoice records are written at completion.  
+**EVIDENCE:** B1/B8/B9.  
+**WHY IT MATTERS:** List status filters do not reflect all jobs in progress or failure.  
+**SEVERITY:** MEDIUM.
+
+### 11. Date filtering and ordering are misleading
+
+**PROBLEM:** Date parameters are ignored; descending order is by invoice ID, not a precise creation timestamp.  
+**EVIDENCE:** F3/F6, B2/B9.  
+**WHY IT MATTERS:** Users can see controls and labels that imply unsupported behavior.  
+**SEVERITY:** MEDIUM.
+
+### 12. Analytics repeatedly loads full tenant history
+
+**PROBLEM:** Each endpoint performs its own paginated query.  
+**EVIDENCE:** B3.  
+**WHY IT MATTERS:** Increasing latency, memory usage, and read cost.  
+**SEVERITY:** MEDIUM; workload-dependent.
+
+### 13. The test gate contains a broken import
+
+**PROBLEM:** OCR test imports the wrong module.  
+**EVIDENCE:** T1.  
+**WHY IT MATTERS:** Automated quality checks cannot be assumed operational.  
+**SEVERITY:** HIGH for release readiness.
+
+### 14. CORS configuration can regress
+
+**PROBLEM:** CI omits `frontendUrl`; gateway errors use localhost as origin.  
+**EVIDENCE:** I5/C1.  
+**WHY IT MATTERS:** CloudFront users can see opaque network/CORS errors.  
+**SEVERITY:** MEDIUM.
+
+### 15. Deletion and expiry are incomplete
+
+**PROBLEM:** Processed text, jobs, and old object versions remain; TTL is never populated.  
+**EVIDENCE:** B2/B9/I2.  
+**WHY IT MATTERS:** Retention, privacy, and storage expectations are not met.  
+**SEVERITY:** MEDIUM.
+
+### 16. Processing-time metric is mislabeled
+
+**PROBLEM:** UI says end-to-end, but the calculation measures selected stage intervals.  
+**EVIDENCE:** B8 and SummaryCards.  
+**WHY IT MATTERS:** Misleading performance conclusions.  
+**SEVERITY:** MEDIUM.
+
+### 17. Documentation overstates guarantees
+
+**PROBLEM:** Claims include perfect rules, complete isolation, idempotency, and operational CI/CD.  
+**EVIDENCE:** D1/D3 versus the source findings above.  
+**WHY IT MATTERS:** Creates inaccurate interview and production expectations.  
+**SEVERITY:** MEDIUM.
+
+---
+
+## 18. Documentation / Visuals vs Implementation
+
+### Tenant isolation
+
+**CLAIM:** Every query is tenant-scoped and users can never see another user’s data.  
+**ACTUAL:** Job fallback reads and browser caches violate that blanket claim.  
+**EVIDENCE:** B2, F4/F5.  
+**CLASSIFICATION:** CONTRADICTED.
+
+### AI JSON guarantees
+
+**CLAIM:** A JSON-schema prompt forces typed output.  
+**ACTUAL:** The prompt requests a structure; the handler does not enforce it.  
+**EVIDENCE:** B6/B11.  
+**CLASSIFICATION:** CONTRADICTED.
+
+### Reliable financial checking
+
+**CLAIM:** Deterministic rules catch errors with 100% reliability.  
+**ACTUAL:** Parsing and accounting semantics are incomplete.  
+**EVIDENCE:** B7.  
+**CLASSIFICATION:** CONTRADICTED.
+
+### Idempotency
+
+**CLAIM:** One job creation succeeds and another is ignored; overwrite makes retries safe.  
+**ACTUAL:** `put_item` is unconditional and both can succeed. Execution names are randomized.  
+**EVIDENCE:** B4/B9.  
+**CLASSIFICATION:** CONTRADICTED.
+
+### DLQ coverage
+
+**CLAIM:** Failed processing invoices move to the DLQ.  
+**ACTUAL:** Downstream workflow failures occur after the queue handoff has succeeded.  
+**EVIDENCE:** B4/I4.  
+**CLASSIFICATION:** CONTRADICTED as a general pipeline guarantee.
+
+### Email alerts
+
+**CLAIM:** HIGH-risk invoices trigger SNS emails.  
+**ACTUAL:** Bus mismatch and no subscription definition.  
+**EVIDENCE:** B8/I4.  
+**CLASSIFICATION:** PARTIAL; actual delivery UNVERIFIED.
+
+### CI/CD
+
+**CLAIM:** Every push automatically deploys everything.  
+**ACTUAL:** Workflows are path-filtered; external secrets/roles are required; D3 says setup was unfinished.  
+**EVIDENCE:** C1/D3.  
+**CLASSIFICATION:** Blanket statement CONTRADICTED; present operational state UNVERIFIED.
+
+### Analytics “scan”
+
+**CLAIM:** Analytics scans DynamoDB.  
+**ACTUAL:** It queries a tenant partition and follows pagination.  
+**EVIDENCE:** B3.  
+**CLASSIFICATION:** CONTRADICTED terminology.
+
+### Last 30 days
+
+**CLAIM:** Trend represents the last 30 days.  
+**ACTUAL:** No date cutoff is applied.  
+**EVIDENCE:** B3/F6-related dashboard components.  
+**CLASSIFICATION:** CONTRADICTED.
+
+### End-to-end duration
+
+**CLAIM:** Dashboard processing time is end-to-end.  
+**ACTUAL:** It is a partial stage-time sum.  
+**EVIDENCE:** B8.  
+**CLASSIFICATION:** CONTRADICTED.
+
+### “Live” badge
+
+**CLAIM IMPLIED BY UI:** System is live.  
+**ACTUAL:** The badge is static text.  
+**EVIDENCE:** F5 Header.  
+**CLASSIFICATION:** No health verification.
+
+### Historical architecture
+
+**CLAIM:** Older diagrams describe the project.  
+**ACTUAL:** They describe B12, not the current five-stack application.  
+**EVIDENCE:** B12/I1–I6.  
+**CLASSIFICATION:** Historical, not current.
+
+---
+
+## 19. Prioritized Improvements
+
+### HIGH PRIORITY
+
+1. **Enforce job ownership and isolate browser caches.**  
+   Update status authorization and clear or namespace cached data by authenticated user.
+
+2. **Add idempotent processing ownership.**  
+   Use a stable object identity, conditional job creation, and explicit duplicate handling.
+
+3. **Separate processing completion from analysis quality.**  
+   Add AI availability and review-required states.
+
+4. **Validate model output.**  
+   Apply bounded schemas, enum validation, and safe handling of malformed responses.
+
+5. **Correct financial normalization.**  
+   Preserve raw fields while adding explicit currency, decimal, tax, discount, and line-total semantics.
+
+6. **Repair alert wiring.**  
+   Use one defined bus, align the rule, configure a destination, and test delivery.
+
+7. **Make deployment reproducible.**  
+   Build compatible layers in a controlled Linux ARM64 process and remove manual attachment drift.
+
+8. **Restore a trustworthy test gate.**  
+   Correct the OCR import and add regression tests for these failures.
+
+### MEDIUM PRIORITY
+
+- Connect completion polling to detail/list/analytics invalidation.
+- Show failed jobs and actionable errors.
+- Implement actual date filters and time-based ordering.
+- Reset pagination when filters change.
+- Enforce upload limits server-side.
+- Add bounded downstream concurrency.
+- Populate TTL or define another retention policy.
+- Implement complete deletion semantics.
+- Persist model/prompt/rule versions.
+- Improve logs and stage-specific alarms.
+- Make CORS configuration consistent across deployment paths.
+
+### OPTIONAL / FUTURE
+
+- Materialized analytics once query costs justify it.
+- Human review and correction.
+- Asynchronous multipage OCR.
+- Push updates if polling becomes expensive.
+- Organization-level tenancy and roles.
+- Vendor-history retrieval if a validated product need emerges.
+- Multi-region recovery based on explicit recovery objectives.
+
+No improvements were implemented.
+
+---
+
+## 20. Realistic Production V2
+
+**THIS IS A PROPOSED FUTURE ARCHITECTURE, NOT THE CURRENT IMPLEMENTATION.**
+
+### KEEP
+
+- React frontend.
+- Cognito authentication.
+- Direct S3 uploads.
+- SQS buffering.
+- Explicit processing stages.
+- Textract and Bedrock separation.
+- DynamoDB persistence.
+- CDK infrastructure.
+
+### CHANGE
+
+- Apply complete ownership checks.
+- Build all deployment assets reproducibly.
+- Make jobs idempotent and status transitions conditional.
+- Normalize extracted financial data.
+- Validate AI output.
+- Separate `processing_status` from `analysis_status`.
+- Align alert publication and routing.
+- Correct browser cache and completion behavior.
+
+### ADD
+
+- An upload-validation stage.
+- Stable object-version identity.
+- Bounded processing concurrency.
+- A review-required state.
+- Labeled evaluation fixtures.
+- End-to-end timestamps.
+- Actionable failure metrics and alarms.
+- A verified notification destination.
+- Model, prompt, and scoring-version metadata.
+
+### OPTIONAL LATER
+
+- Human review UI.
+- Async OCR for longer documents.
+- Incremental analytics.
+- WebSocket updates.
+- Cross-region recovery.
+- Historical retrieval.
+
+```text
+Browser + Cognito
+       │
+       ▼
+Authenticated API ── tenant ownership checks
+       │
+       ▼
+Constrained S3 upload
+       │
+       ▼
+SQS → idempotent job claim → bounded workflow launch
+                                  │
+                                  ▼
+                    Validate → OCR → Normalize
+                                  │
+                                  ▼
+                      AI → schema validation
+                                  │
+                                  ▼
+                       Rules → review decision
+                                  │
+                                  ▼
+                    Consistent result persistence
+                      ├── invoice/job state
+                      ├── versioned evidence
+                      └── correctly wired alerts
+
+Browser ← status/detail refresh ← API
+```
+
+Standard Step Functions should be considered if longer-running OCR or human waiting becomes necessary. It should not be added solely to make the architecture appear more sophisticated.
+
+---
+
+## 21. Improvement Roadmap
+
+```text
+Current project
+  ↓
+Restore test collection and reproducible builds
+  ↓
+Close job-status and browser-cache isolation gaps
+  ↓
+Add idempotency and reliable state transitions
+  ↓
+Validate AI output and represent degraded analysis
+  ↓
+Correct financial rules and evaluate sample documents
+  ↓
+Repair notifications, polling, filters, and deletion
+  ↓
+Unify deployment configuration and artifact delivery
+  ↓
+Add operational metrics, alarms, and load testing
+  ↓
+Production V2 acceptance review
+```
+
+Each step should have measurable acceptance criteria. For example, duplicate delivery should produce one logical result and one intended notification, rather than merely “not throwing an exception.”
+
+---
+
+## 22. Architecture / Design Decisions
+
+The following reasoning is defensible engineering analysis. Where documentation gives a rationale, it is still not independent proof of the original decision process.
+
+### Direct S3 upload
+
+**REQUIREMENT:** Accept invoice files.  
+**CURRENT CHOICE:** Presigned PUT URL.  
+**WHY:** Avoids transporting file bytes through application handlers.  
+**TRADE-OFF:** Upload completion and document validation become separate concerns.  
+**ALTERNATIVE:** Backend-mediated upload or constrained presigned POST.  
+**WHEN UNSUITABLE:** When mandatory inspection must occur before any object enters the normal ingestion path.
+
+### SQS before workflow launch
+
+**REQUIREMENT:** Buffer upload events and retry failed handoffs.  
+**CURRENT CHOICE:** Standard SQS plus trigger Lambda.  
+**WHY:** Provides a queue boundary and DLQ for launch failures.  
+**TRADE-OFF:** Duplicate delivery remains possible; downstream concurrency needs separate control.  
+**ALTERNATIVE:** Direct event routing for simpler workloads.  
+**WHEN UNSUITABLE:** When ordering or more specialized scheduling is required.
+
+### Step Functions Express
+
+**REQUIREMENT:** Coordinate short processing stages.  
+**CURRENT CHOICE:** Asynchronous Express workflow.  
+**WHY:** Explicit stage sequence, retries, and catches.  
+**TRADE-OFF:** Requires idempotent design and log-based execution investigation.  
+**ALTERNATIVE:** Standard workflow or a simpler single function.  
+**WHEN UNSUITABLE:** Long waits, human approvals, or longer OCR jobs.
+
+### DynamoDB
+
+**REQUIREMENT:** Store variable invoice records and job state.  
+**CURRENT CHOICE:** Composite-key invoice table and separate jobs table.  
+**WHY:** Fits key-based reads and document-like records.  
+**TRADE-OFF:** Aggregation and alternate sorting require deliberate access-pattern design.  
+**ALTERNATIVE:** Relational storage for accounting relationships and reporting.  
+**WHEN UNSUITABLE:** Complex joins and transactional accounting become central.
+
+### Textract AnalyzeExpense
+
+**REQUIREMENT:** Extract invoice-specific fields.  
+**CURRENT CHOICE:** Expense extraction rather than generic text OCR.  
+**WHY:** Produces useful summary and line-item structures.  
+**TRADE-OFF:** Extraction still needs normalization and quality checks.  
+**ALTERNATIVE:** Generic OCR plus custom parsing, or asynchronous expense analysis.  
+**WHEN UNSUITABLE:** Document types or lengths exceed the chosen path.
+
+### Bedrock Nova Micro
+
+**REQUIREMENT:** Generate semantic findings from invoice text.  
+**CURRENT CHOICE:** One text-model invocation through AWS IAM.  
+**WHY:** Integrates with the existing AWS application.  
+**TRADE-OFF:** Model output is probabilistic and lacks external business references.  
+**ALTERNATIVE:** Another evaluated model or rules-only processing.  
+**WHEN UNSUITABLE:** Evaluation shows inadequate accuracy or missing capabilities.
+
+### Polling
+
+**REQUIREMENT:** Display asynchronous progress.  
+**CURRENT CHOICE:** Three-second status polling.  
+**WHY:** Simple frontend integration.  
+**TRADE-OFF:** Repeated requests and delayed update visibility.  
+**ALTERNATIVE:** Push notifications.  
+**WHEN UNSUITABLE:** Measured polling cost or concurrent-client load warrants replacement.
+
+---
+
+## 23. Interview-Critical Facts
+
+### What you can confidently claim
+
+- The repository implements a React and Python serverless invoice application.
+- Infrastructure is defined through five CDK stacks.
+- Eight application Lambda functions have defined responsibilities.
+- Uploads go directly from browser to S3.
+- SQS connects ingestion to workflow launch.
+- Step Functions orchestrates four stages.
+- Textract extracts fields; Nova Micro generates findings.
+- Deterministic rules produce the final numeric score.
+- DynamoDB stores results and jobs.
+- The UI displays findings and analytics.
+- Tests and CI/CD workflow files exist.
+
+### What you should explain carefully
+
+- “Multi-tenant” currently means one Cognito user ID as a tenant.
+- AI failure can still produce COMPLETED.
+- SQS retries do not cover all downstream failures.
+- Scores are heuristics, not calibrated fraud probabilities.
+- Confidence is model-generated, not measured accuracy.
+- Screenshots support a historical demo, not current service health.
+- Deployment requires external configuration and currently has reproducibility gaps.
+- The timing metric is not end-to-end latency.
+- Deterministic code can still implement incorrect assumptions.
+
+### Do not claim these things
+
+- RAG or vector search.
+- Autonomous agents or LangGraph.
+- Trained fraud-detection models.
+- Proven fraud accuracy.
+- Perfect financial validation.
+- Complete tenant isolation.
+- Exactly-once processing.
+- Complete automatic recovery.
+- Confirmed email alerts.
+- Verified live CI/CD.
+- Verified production readiness.
+- Measured user capacity or cost savings.
+- Current AWS uptime.
+- A personal implementation history that cannot be supported by your actual work.
+
+---
+
+## 24. Project-Specific Learning Curriculum
+
+**FILE:** 01-Project-Overview.md  
+**MAIN TOPIC:** Purpose, users, implemented scope, and maturity.  
+**WHY I NEED IT:** Explain the project accurately before discussing individual services.
+
+**FILE:** 02-Current-Architecture.md  
+**MAIN TOPIC:** Five stacks, eight functions, and service boundaries.  
+**WHY I NEED IT:** Reconstruct the current architecture without relying on misleading diagrams.
+
+**FILE:** 03-Application-Flow.md  
+**MAIN TOPIC:** Authentication, upload, processing, results, analytics, and deletion.  
+**WHY I NEED IT:** Trace an invoice end to end.
+
+**FILE:** 04-Technology-Stack.md  
+**MAIN TOPIC:** React, TypeScript, Python, Boto3, CDK, and supporting libraries.  
+**WHY I NEED IT:** Explain each technology’s responsibility.
+
+**FILE:** 05-Cognito-and-User-Isolation.md  
+**MAIN TOPIC:** Tokens, authorizers, tenant keys, ownership, and browser caches.  
+**WHY I NEED IT:** Distinguish authentication from complete authorization.
+
+**FILE:** 06-S3-Presigned-Uploads.md  
+**MAIN TOPIC:** Direct upload, content constraints, object keys, and validation.  
+**WHY I NEED IT:** Explain the ingestion boundary and its security limitations.
+
+**FILE:** 07-SQS-and-Idempotency.md  
+**MAIN TOPIC:** Redelivery, visibility timeout, DLQ scope, and duplicate jobs.  
+**WHY I NEED IT:** Avoid incorrect exactly-once and recovery claims.
+
+**FILE:** 08-Step-Functions-Workflow.md  
+**MAIN TOPIC:** Express orchestration, payloads, retries, catches, and job state.  
+**WHY I NEED IT:** Understand the difference between workflow status and business status.
+
+**FILE:** 09-Textract-and-OCR-Quality.md  
+**MAIN TOPIC:** Expense extraction, parsing, confidence, and document limitations.  
+**WHY I NEED IT:** Explain where extracted values come from and why they can be wrong.
+
+**FILE:** 10-Bedrock-Nova-Prompting.md  
+**MAIN TOPIC:** Model invocation, prompt construction, output parsing, and retries.  
+**WHY I NEED IT:** Defend the actual GenAI implementation.
+
+**FILE:** 11-AI-Validation-and-Evaluation.md  
+**MAIN TOPIC:** Schema enforcement, prompt injection, degraded analysis, and labeled fixtures.  
+**WHY I NEED IT:** Separate successful model calls from trustworthy outputs.
+
+**FILE:** 12-Financial-Rules-and-Risk-Scoring.md  
+**MAIN TOPIC:** Weights, thresholds, normalization, and double counting.  
+**WHY I NEED IT:** Calculate and critique the project’s score.
+
+**FILE:** 13-DynamoDB-Access-Patterns.md  
+**MAIN TOPIC:** Composite keys, jobs, pagination, ordering, TTL, and analytics.  
+**WHY I NEED IT:** Explain storage choices and scaling constraints.
+
+**FILE:** 14-Frontend-State-and-Polling.md  
+**MAIN TOPIC:** React Query, Zustand, completion refresh, and session transitions.  
+**WHY I NEED IT:** Troubleshoot UI behavior separately from backend processing.
+
+**FILE:** 15-Events-and-Notifications.md  
+**MAIN TOPIC:** EventBridge buses, rules, SNS subscriptions, and delivery verification.  
+**WHY I NEED IT:** Understand the current alerting gap.
+
+**FILE:** 16-Deployment-and-Lambda-Packaging.md  
+**MAIN TOPIC:** CDK, layers, Linux ARM64 compatibility, and configuration.  
+**WHY I NEED IT:** Explain why a historical demo can differ from a clean deployment.
+
+**FILE:** 17-CICD-and-Release-Quality.md  
+**MAIN TOPIC:** GitHub Actions, OIDC, test gates, and rollback.  
+**WHY I NEED IT:** Distinguish workflow definitions from an operational release process.
+
+**FILE:** 18-Security-and-Data-Lifecycle.md  
+**MAIN TOPIC:** IAM, CORS, uploads, credentials, deletion, and retention.  
+**WHY I NEED IT:** Explain implemented controls and unresolved risks.
+
+**FILE:** 19-Troubleshooting-and-Observability.md  
+**MAIN TOPIC:** Job states, stage logs, tracing, alarms, and failure isolation.  
+**WHY I NEED IT:** Investigate failures systematically.
+
+**FILE:** 20-Testing-Cost-and-Scalability.md  
+**MAIN TOPIC:** Existing tests, missing coverage, workload measurement, and cost drivers.  
+**WHY I NEED IT:** Answer production questions without inventing numbers.
+
+**FILE:** 21-Limitations-and-Production-V2.md  
+**MAIN TOPIC:** Prioritized fixes and a restrained future architecture.  
+**WHY I NEED IT:** Present a realistic improvement plan.
+
+**FILE:** 22-Architecture-Design-Decisions.md  
+**MAIN TOPIC:** Requirements, choices, alternatives, and trade-offs.  
+**WHY I NEED IT:** Defend decisions without memorized slogans.
+
+**FILE:** 23-Complete-Project-Storytelling.md  
+**MAIN TOPIC:** Accurate short and detailed project narratives.  
+**WHY I NEED IT:** Connect the problem, implementation, limitations, and improvements.
+
+**FILE:** 24-Interview-Questions-and-Answers.md  
+**MAIN TOPIC:** Repository-specific technical and pressure questions.  
+**WHY I NEED IT:** Practice answers that survive follow-up questions.
+
+**FILE:** 25-Mock-Interview-Preparation.md  
+**MAIN TOPIC:** Progressive interview chains and evidence-based explanations.  
+**WHY I NEED IT:** Explain the project naturally in my own words.
+
+---
+
+## 25. Verified Project Fact Sheet
+
+**PROJECT NAME:** NovaMind AI Invoice Intelligence Platform.
+
+**PROJECT TYPE:** Serverless invoice-processing web application.
+
+**PURPOSE:** Extract invoice information and generate review findings and risk scores.
+
+**TARGET USERS:** Finance and invoice reviewers, inferred from the product.
+
+**ARCHITECTURE STYLE:** Event-driven serverless application with fixed workflow orchestration.
+
+**MAIN ENTRY POINT:** Frontend `main.tsx`; API handlers and SQS trigger are backend entry points; CDK `bin/app.ts` is the infrastructure entry point.
+
+**LANGUAGES:** Python, TypeScript/TSX, CSS, JSON, YAML, PowerShell.
+
+**FRAMEWORKS:** React, Vite, AWS CDK.
+
+**IMPORTANT LIBRARIES:** Boto3, Amplify, Axios, React Query, Zustand, Recharts, pytest; Pydantic models are defined but not enforced.
+
+**FRONTEND:** Login, dashboard, invoices, detail, analytics.
+
+**BACKEND:** Three API Lambdas, one queue bridge, four processing Lambdas.
+
+**APIs:** Upload URL, invoice list/detail/status/delete, summary/trend/vendor/anomaly analytics.
+
+**AI/ML:** Textract OCR and Bedrock Nova Micro inference. No training, RAG, or agents.
+
+**AWS/CLOUD:** S3, CloudFront, Cognito, API Gateway, Lambda, SQS, Step Functions, Textract, Bedrock, DynamoDB, EventBridge, SNS, CloudWatch, X-Ray, IAM, CloudFormation.
+
+**DATABASE/STORAGE:** DynamoDB invoices/jobs; S3 originals, extracted text, and static assets.
+
+**EXTERNAL SERVICES:** AWS service APIs and GitHub Actions; no accounting or vendor-reference integration.
+
+**DEVOPS:** CDK and GitHub Actions definitions; manual PowerShell layer repair scripts.
+
+**TESTING:** 44 unit-test functions; OCR import defect; execution not performed.
+
+**MAIN REQUEST FLOW:** Login → presigned upload → S3 → SQS → trigger → OCR → AI → rules → persistence → API reads.
+
+**STATE/MEMORY:** Durable AWS records; temporary UI caches and Lambda limiter state; no conversational memory.
+
+**AUTHENTICATION:** Cognito with Amplify and API Gateway authorizer.
+
+**AUTHORIZATION:** User-scoped invoice keys; incomplete job and browser-cache isolation.
+
+**DEPLOYMENT:** AWS infrastructure definitions and historical deployment evidence; current state unverified.
+
+**MONITORING:** Logs, tracing configuration, and DLQ alarm; no demonstrated complete operational dashboard.
+
+**IMPORTANT VISUAL ASSETS:** Current architecture JPG, UI screenshots, AWS console screenshots, archived single-Lambda diagram.
+
+**IMPLEMENTED:** Main processing and display paths.
+
+**PARTIAL:** Isolation, alerts, schema validation, lifecycle management, UI refresh, deployment reliability.
+
+**DOCUMENTED/INTENDED:** Automatic releases, email notifications, stronger production guarantees.
+
+**FUTURE/PROPOSED:** Agents, push updates, materialized analytics, multi-region extensions.
+
+**UNVERIFIED:** Live deployment, operational CI/CD, subscribers, quotas, performance, and actual cost.
+
+**NOT PRESENT:** RAG, vector database, autonomous agents, ML training, approval workflow, ERP posting.
+
+**TOP STRENGTHS:** Clear stages, direct upload, infrastructure source, visible evidence, hybrid scoring.
+
+**TOP GAPS:** Isolation, idempotency, financial correctness, AI validation, alert wiring, packaging, tests.
+
+**TOP PRODUCTION PRIORITIES:** Close security gaps, make processing repeatable, validate outputs, correct scoring, and establish trustworthy delivery/testing.
+
+---
+
+## 26. Complete Project-Specific Interview Question & Answer Bank
+
+The answers below are practice material. They describe the repository, not an invented employment history. Replace personal-role statements only with work you actually performed.
+
+### A. Project introduction
+
+### Q1. Tell me about this project.
+
+**DIFFICULTY:** Beginner.
+
+**WHY THE INTERVIEWER ASKS THIS:** To test whether you can explain the problem and solution coherently.
+
+**WHAT I MUST UNDERSTAND BEFORE ANSWERING:** Upload path, processing stages, storage, and limitations.
+
+**WORD-BY-WORD PRACTICE ANSWER:**  
+“NovaMind AI is a serverless invoice analysis application. A user uploads an invoice through a React interface. Textract extracts fields and text, Nova Micro generates possible anomaly findings, and Python rules calculate a review score. DynamoDB stores the result, and the dashboard displays the extracted data and explanation. The repository implements that main path, but it still has reliability, validation, and deployment gaps before I would call it production-ready.”
+
+**PROJECT EVIDENCE:** F1–F6, B1–B9, I1–I6.
+
+**FOLLOW-UP QUESTION 1:** Who is it for?  
+**WORD-BY-WORD FOLLOW-UP ANSWER:** “The intended audience is people reviewing invoices, such as finance or accounts-payable staff. I would not claim a real customer base from this repository.”
+
+**FOLLOW-UP QUESTION 2:** Does it prove fraud?  
+**WORD-BY-WORD FOLLOW-UP ANSWER:** “No. It produces review signals. Suspicious data can also come from OCR errors or legitimate invoice formats.”
+
+**COMMON MISTAKE:** Calling it a proven fraud-detection product.
+
+### Q2. What problem does it solve?
+
+**DIFFICULTY:** Beginner.
+
+**WHY THE INTERVIEWER ASKS THIS:** To connect technical work with business value.
+
+**WHAT I MUST UNDERSTAND BEFORE ANSWERING:** Document extraction versus review prioritization.
+
+**WORD-BY-WORD PRACTICE ANSWER:**  
+“The problem is that invoice documents are hard to inspect consistently at volume. This application turns them into structured fields and highlights possible inconsistencies. It reduces the work needed to locate information and decide what deserves review. The repository does not measure actual time savings, so I would describe the intended benefit without claiming a percentage.”
+
+**PROJECT EVIDENCE:** B5–B8, F6.
+
+**FOLLOW-UP QUESTION 1:** Why is OCR alone insufficient?  
+**WORD-BY-WORD FOLLOW-UP ANSWER:** “OCR gives us extracted content. It does not by itself implement our review rules or generate the explanations shown in the dashboard.”
+
+**FOLLOW-UP QUESTION 2:** What is outside the scope?  
+**WORD-BY-WORD FOLLOW-UP ANSWER:** “Payment execution, accounting entries, and reviewer approval are not implemented.”
+
+**COMMON MISTAKE:** Inventing business-impact numbers.
+
+### Q3. What was your personal role and biggest challenge?
+
+**DIFFICULTY:** Intermediate.
+
+**WHY THE INTERVIEWER ASKS THIS:** To distinguish understanding from copied project descriptions.
+
+**WHAT I MUST UNDERSTAND BEFORE ANSWERING:** Your actual contribution and a verifiable example.
+
+**WORD-BY-WORD PRACTICE ANSWER:**  
+“I would describe my personal contribution using the changes and debugging work I actually performed. The repository contains frontend, backend, infrastructure, and deployment work, but its presence alone does not prove I wrote every part. One documented technical challenge is packaging shared Python utilities so Lambda can import the `shared` package. I can explain the required directory structure and the remaining platform-compatibility issue.”
+
+**PROJECT EVIDENCE:** I4/I5, layer directory, repair scripts, D3.
+
+**FOLLOW-UP QUESTION 1:** What directory structure is required?  
+**WORD-BY-WORD FOLLOW-UP ANSWER:** “The utility package is placed under `python/shared/` in the layer so `from shared.db import ...` can resolve.”
+
+**FOLLOW-UP QUESTION 2:** Is the packaging fully solved?  
+**WORD-BY-WORD FOLLOW-UP ANSWER:** “Not completely. The inspected layer contains a Windows-native dependency while the target runtime is Linux ARM64.”
+
+**COMMON MISTAKE:** Memorizing a first-person history that is not yours.
+
+### B. Architecture and processing
+
+### Q4. Walk me through the architecture.
+
+**DIFFICULTY:** Intermediate.
+
+**WHY THE INTERVIEWER ASKS THIS:** To test component relationships.
+
+**WHAT I MUST UNDERSTAND BEFORE ANSWERING:** Synchronous API work versus asynchronous processing.
+
+**WORD-BY-WORD PRACTICE ANSWER:**  
+“The browser loads a React application through CloudFront and authenticates with Cognito. API Gateway protects the backend routes. The upload API creates a job and returns a presigned S3 URL. After the browser uploads the document, S3 sends an event to SQS. A Lambda starts a Step Functions workflow with OCR, AI, risk scoring, and storage stages. The browser retrieves status and results through the API.”
+
+**PROJECT EVIDENCE:** I1–I6, B1/B4–B8.
+
+**FOLLOW-UP QUESTION 1:** Where do file bytes travel?  
+**WORD-BY-WORD FOLLOW-UP ANSWER:** “Directly from the browser to S3.”
+
+**FOLLOW-UP QUESTION 2:** Are these microservices?  
+**WORD-BY-WORD FOLLOW-UP ANSWER:** “They are separate Lambda responsibilities in one application. I would avoid claiming independently governed microservices without stronger boundaries.”
+
+**COMMON MISTAKE:** Drawing the file upload through API Gateway.
+
+### Q5. Why use SQS?
+
+**DIFFICULTY:** Intermediate.
+
+**WHY THE INTERVIEWER ASKS THIS:** To test asynchronous design and failure boundaries.
+
+**WHAT I MUST UNDERSTAND BEFORE ANSWERING:** Visibility timeout, redelivery, and workflow launch.
+
+**WORD-BY-WORD PRACTICE ANSWER:**  
+“SQS buffers upload events and allows the trigger handoff to be retried. The queue has a 120-second visibility timeout and a dead-letter queue after repeated receives. The important limitation is that the trigger only starts the workflow. Once it succeeds, a later OCR failure does not automatically return that original message to SQS.”
+
+**PROJECT EVIDENCE:** I2/I4, B4.
+
+**FOLLOW-UP QUESTION 1:** Does it prevent Bedrock overload?  
+**WORD-BY-WORD FOLLOW-UP ANSWER:** “Not by itself. The bridge can launch many workflows quickly, and downstream concurrency is not explicitly bounded.”
+
+**FOLLOW-UP QUESTION 2:** Why not trigger Lambda directly from S3?  
+**WORD-BY-WORD FOLLOW-UP ANSWER:** “That is a simpler alternative. The queue is useful when buffering and controlled redelivery are requirements.”
+
+**COMMON MISTAKE:** Saying the DLQ captures every pipeline failure.
+
+### Q6. Why Step Functions Express?
+
+**DIFFICULTY:** Intermediate.
+
+**WHY THE INTERVIEWER ASKS THIS:** To test orchestration trade-offs.
+
+**WHAT I MUST UNDERSTAND BEFORE ANSWERING:** Fixed stages, retries, duration, and idempotency.
+
+**WORD-BY-WORD PRACTICE ANSWER:**  
+“The source uses Express to coordinate four short stages with explicit retry and failure paths. This makes each stage easier to inspect than one large function. I would not claim Express automatically makes the workflow exactly once or always cheaper. Its suitability depends on workload behavior and measurement.”
+
+**PROJECT EVIDENCE:** I4.
+
+**FOLLOW-UP QUESTION 1:** When would you use Standard?  
+**WORD-BY-WORD FOLLOW-UP ANSWER:** “For longer-running work or waiting patterns that do not fit the current short pipeline, such as extended document processing or human review.”
+
+**FOLLOW-UP QUESTION 2:** Is the current workflow idempotent?  
+**WORD-BY-WORD FOLLOW-UP ANSWER:** “No. It needs duplicate suppression and conditional state transitions.”
+
+**COMMON MISTAKE:** Equating orchestration with exactly-once execution.
+
+AWS describes asynchronous Express execution as at least once, reinforcing the need for idempotent actions. [AWS workflow-type documentation](https://docs.aws.amazon.com/step-functions/latest/dg/choosing-workflow-type.html).
+
+### Q7. What happens if an upload event arrives twice?
+
+**DIFFICULTY:** Advanced.
+
+**WHY THE INTERVIEWER ASKS THIS:** To test distributed-system correctness.
+
+**WHAT I MUST UNDERSTAND BEFORE ANSWERING:** Stable identity and conditional writes.
+
+**WORD-BY-WORD PRACTICE ANSWER:**  
+“The current trigger can process it twice. It unconditionally creates the same job record and generates a new random workflow execution name. That can repeat OCR and AI costs and overwrite status or results. I would add a conditional claim using a stable object identity, including version information when appropriate.”
+
+**PROJECT EVIDENCE:** B4/B9, I2.
+
+**FOLLOW-UP QUESTION 1:** Doesn’t `put_item` make retries safe?  
+**WORD-BY-WORD FOLLOW-UP ANSWER:** “It replaces a record, but it does not prevent repeated external calls or notifications.”
+
+**FOLLOW-UP QUESTION 2:** Is the invoice ID alone sufficient?  
+**WORD-BY-WORD FOLLOW-UP ANSWER:** “It identifies the logical invoice, but object overwrites and versions need an explicit processing policy.”
+
+**COMMON MISTAKE:** Calling overwrite behavior complete idempotency.
+
+### Q8. What happens when a pipeline stage fails?
+
+**DIFFICULTY:** Advanced.
+
+**WHY THE INTERVIEWER ASKS THIS:** To test business state versus orchestration state.
+
+**WHAT I MUST UNDERSTAND BEFORE ANSWERING:** Raised errors, caught errors, and terminal states.
+
+**WORD-BY-WORD PRACTICE ANSWER:**  
+“Several task failures are caught and routed to a DynamoDB job update. However, the deployed CDK failure handler stores less detail than the separate JSON specification. It ends after that update, so the workflow can complete successfully while the application job is FAILED. I would make that distinction explicit in monitoring and use a deliberate terminal-state design.”
+
+**PROJECT EVIDENCE:** I4/I7, B5–B8.
+
+**FOLLOW-UP QUESTION 1:** Do all errors reach that handler?  
+**WORD-BY-WORD FOLLOW-UP ANSWER:** “I would not assume that. Execution-level timeouts and some payload failures require separate recovery consideration.”
+
+**FOLLOW-UP QUESTION 2:** What is the user-facing problem?  
+**WORD-BY-WORD FOLLOW-UP ANSWER:** “The UI does not clearly present all failed-job details, so users can be left with an unhelpful detail error.”
+
+**COMMON MISTAKE:** Assuming Step Functions success means business success.
+
+### C. OCR and Generative AI
+
+### Q9. What exactly does Textract do here?
+
+**DIFFICULTY:** Beginner.
+
+**WHY THE INTERVIEWER ASKS THIS:** To distinguish extraction from reasoning.
+
+**WHAT I MUST UNDERSTAND BEFORE ANSWERING:** AnalyzeExpense response parsing.
+
+**WORD-BY-WORD PRACTICE ANSWER:**  
+“The OCR Lambda calls Textract AnalyzeExpense using the S3 object. The parser extracts summary fields, line items, and raw text lines from the first expense document. It leaves most values as strings. Bedrock then receives those values for analysis.”
+
+**PROJECT EVIDENCE:** B5.
+
+**FOLLOW-UP QUESTION 1:** Does it extract every field perfectly?  
+**WORD-BY-WORD FOLLOW-UP ANSWER:** “No. Fields can be missing or misread, and the current parser does not retain confidence for review decisions.”
+
+**FOLLOW-UP QUESTION 2:** Does it support every PDF?  
+**WORD-BY-WORD FOLLOW-UP ANSWER:** “No such guarantee is implemented. The UI accepts PDF, but document limits and multipage handling need explicit validation.”
+
+**COMMON MISTAKE:** Treating accepted extension as complete format support.
+
+### Q10. Which model is used and how is it invoked?
+
+**DIFFICULTY:** Intermediate.
+
+**WHY THE INTERVIEWER ASKS THIS:** To test direct implementation knowledge.
+
+**WHAT I MUST UNDERSTAND BEFORE ANSWERING:** Model ID, request body, and output extraction.
+
+**WORD-BY-WORD PRACTICE ANSWER:**  
+“The AI Lambda invokes `us.amazon.nova-micro-v1:0` through the Bedrock runtime client. It sends one user message containing invoice fields and OCR text. The request limits output to 1,500 tokens and uses temperature 0.2 and top-p 0.9. It reads the first returned text content and attempts to parse JSON.”
+
+**PROJECT EVIDENCE:** B6/I4.
+
+**FOLLOW-UP QUESTION 1:** Does the model receive the invoice image?  
+**WORD-BY-WORD FOLLOW-UP ANSWER:** “No. This implementation sends extracted text and fields.”
+
+**FOLLOW-UP QUESTION 2:** Why this model?  
+**WORD-BY-WORD FOLLOW-UP ANSWER:** “It fits the existing AWS integration. Any claim that it is the best model should be backed by evaluation, which is missing here.”
+
+**COMMON MISTAKE:** Naming Claude, GPT, or multimodal inference as current behavior.
+
+### Q11. How is the prompt constructed?
+
+**DIFFICULTY:** Intermediate.
+
+**WHY THE INTERVIEWER ASKS THIS:** To test context and output design.
+
+**WHAT I MUST UNDERSTAND BEFORE ANSWERING:** Structured summary, raw text, and schema request.
+
+**WORD-BY-WORD PRACTICE ANSWER:**  
+“The prompt asks the model to act as an invoice auditor. It provides structured fields and line items, followed by raw OCR text. It asks for anomaly type, severity, description, affected field, summary, and confidence. The instruction says not to invent findings, but that is guidance rather than a guarantee.”
+
+**PROJECT EVIDENCE:** B6 `build_analysis_prompt()`.
+
+**FOLLOW-UP QUESTION 1:** Is there a separate system prompt?  
+**WORD-BY-WORD FOLLOW-UP ANSWER:** “No. The instructions are inside the single user-message text.”
+
+**FOLLOW-UP QUESTION 2:** Is input length controlled?  
+**WORD-BY-WORD FOLLOW-UP ANSWER:** “There is no explicit token-budgeting or truncation strategy for the input.”
+
+**COMMON MISTAKE:** Saying the prompt enforces a schema.
+
+### Q12. How do you validate model output?
+
+**DIFFICULTY:** Advanced.
+
+**WHY THE INTERVIEWER ASKS THIS:** To test whether you distinguish JSON syntax from application correctness.
+
+**WHAT I MUST UNDERSTAND BEFORE ANSWERING:** Parsing, types, enums, bounds, and fallback.
+
+**WORD-BY-WORD PRACTICE ANSWER:**  
+“The current implementation mostly validates JSON syntax. It removes common formatting wrappers and attempts parsing. It does not enforce the Pydantic model that exists in the repository. I would validate the top-level object, anomaly fields, allowed severities, length limits, and confidence range before scoring.”
+
+**PROJECT EVIDENCE:** B6/B11.
+
+**FOLLOW-UP QUESTION 1:** What if the model returns a JSON list?  
+**WORD-BY-WORD FOLLOW-UP ANSWER:** “Parsing can succeed, but later dictionary operations can fail.”
+
+**FOLLOW-UP QUESTION 2:** What if parsing fails entirely?  
+**WORD-BY-WORD FOLLOW-UP ANSWER:** “The current fallback returns no anomalies and recommends manual review in the summary.”
+
+**COMMON MISTAKE:** Saying “valid JSON” means “safe output.”
+
+### Q13. What happens when Bedrock fails?
+
+**DIFFICULTY:** Intermediate.
+
+**WHY THE INTERVIEWER ASKS THIS:** To test availability and degraded behavior.
+
+**WHAT I MUST UNDERSTAND BEFORE ANSWERING:** Retry scope and downstream scoring.
+
+**WORD-BY-WORD PRACTICE ANSWER:**  
+“Throttling can be retried with exponential backoff and jitter. Certain handled failures become an empty AI result with zero confidence, and the pipeline continues. That keeps OCR results available, but it can produce a lower score without AI findings. I would expose degraded analysis as a separate state requiring review.”
+
+**PROJECT EVIDENCE:** B6–B8.
+
+**FOLLOW-UP QUESTION 1:** How many attempts?  
+**WORD-BY-WORD FOLLOW-UP ANSWER:** “Up to five application-level attempts: one initial attempt and four retries.”
+
+**FOLLOW-UP QUESTION 2:** Does every timeout fall back?  
+**WORD-BY-WORD FOLLOW-UP ANSWER:** “No. A Lambda timeout cannot be handled by that ordinary exception block, and not every network exception is converted.”
+
+**COMMON MISTAKE:** Saying all model failures are harmless.
+
+### Q14. Is this RAG or Agentic AI?
+
+**DIFFICULTY:** Intermediate.
+
+**WHY THE INTERVIEWER ASKS THIS:** To challenge terminology.
+
+**WHAT I MUST UNDERSTAND BEFORE ANSWERING:** Retrieval versus provided input; fixed orchestration versus model decisions.
+
+**WORD-BY-WORD PRACTICE ANSWER:**  
+“It is prompt-based Generative AI analysis. The invoice content is passed directly to the model. There is no retrieval system supplying historical evidence, and the model does not choose tools or control the workflow. Step Functions follows a fixed sequence.”
+
+**PROJECT EVIDENCE:** B6/I4 and dependency manifests.
+
+**FOLLOW-UP QUESTION 1:** Isn’t OCR text retrieved context?  
+**WORD-BY-WORD FOLLOW-UP ANSWER:** “It is the input document being processed, not a retrieved knowledge source selected to ground a query.”
+
+**FOLLOW-UP QUESTION 2:** Would agents improve this?  
+**WORD-BY-WORD FOLLOW-UP ANSWER:** “Only if there were a real need for dynamic decisions. They are not necessary for the current fixed pipeline.”
+
+**COMMON MISTAKE:** Calling any multi-step AI application agentic.
+
+### Q15. How do you handle hallucination and prompt injection?
+
+**DIFFICULTY:** Advanced.
+
+**WHY THE INTERVIEWER ASKS THIS:** To test AI trust boundaries.
+
+**WHAT I MUST UNDERSTAND BEFORE ANSWERING:** Untrusted invoice text and unsupported findings.
+
+**WORD-BY-WORD PRACTICE ANSWER:**  
+“The prompt asks for evidence-based findings, but there is no measured hallucination control. Invoice text is also untrusted and can contain instructions. I would separate instructions from document content more clearly, validate every output, require evidence references where practical, and evaluate adversarial examples. I would not let model findings become automatic payment decisions.”
+
+**PROJECT EVIDENCE:** B6/B7/F6.
+
+**FOLLOW-UP QUESTION 1:** Can this model call external tools?  
+**WORD-BY-WORD FOLLOW-UP ANSWER:** “No. The risk is corrupted analysis, not autonomous tool execution in this implementation.”
+
+**FOLLOW-UP QUESTION 2:** Is 95% confidence proof of accuracy?  
+**WORD-BY-WORD FOLLOW-UP ANSWER:** “No. It is a generated value, not a calibrated measurement.”
+
+**COMMON MISTAKE:** Treating low temperature as a security control.
+
+### D. Risk scoring and data
+
+### Q16. Explain the exact risk score.
+
+**DIFFICULTY:** Intermediate.
+
+**WHY THE INTERVIEWER ASKS THIS:** To test ownership of business logic.
+
+**WHAT I MUST UNDERSTAND BEFORE ANSWERING:** Rule weights and bands.
+
+**WORD-BY-WORD PRACTICE ANSWER:**  
+“A math mismatch adds 40. Each of four missing fields adds 8. A very short numeric invoice number adds 10, and duplicate descriptions add 15. AI findings add 15, 7, or 3 according to severity. The score is capped at 100. Below 30 is LOW, 30 through 69 is MEDIUM, and 70 upward is HIGH.”
+
+**PROJECT EVIDENCE:** B7.
+
+**FOLLOW-UP QUESTION 1:** Is 80 an 80% fraud probability?  
+**WORD-BY-WORD FOLLOW-UP ANSWER:** “No. It is a heuristic point score.”
+
+**FOLLOW-UP QUESTION 2:** Are the weights validated?  
+**WORD-BY-WORD FOLLOW-UP ANSWER:** “The repository does not contain a calibration study.”
+
+**COMMON MISTAKE:** Presenting heuristic scores as probabilities.
+
+### Q17. What is wrong with the current math check?
+
+**DIFFICULTY:** Advanced.
+
+**WHY THE INTERVIEWER ASKS THIS:** To test financial semantics and edge cases.
+
+**WHAT I MUST UNDERSTAND BEFORE ANSWERING:** Total versus subtotal, tax, quantity, and parsing.
+
+**WORD-BY-WORD PRACTICE ANSWER:**  
+“It sums extracted price fields and compares them directly with the total using a one-percent tolerance. That can flag legitimate tax or shipping differences. It also does not explicitly distinguish unit prices from line totals. Number cleaning removes signs and some formatting information, so the arithmetic may be consistent while the interpretation is wrong.”
+
+**PROJECT EVIDENCE:** B7 `check_math_error()`.
+
+**FOLLOW-UP QUESTION 1:** How would you improve it?  
+**WORD-BY-WORD FOLLOW-UP ANSWER:** “Normalize money with decimal arithmetic and compare subtotal, tax, discounts, and final total according to explicit rules.”
+
+**FOLLOW-UP QUESTION 2:** What happens with amounts in words?  
+**WORD-BY-WORD FOLLOW-UP ANSWER:** “The current numeric parser can produce zero and skip the comparison.”
+
+**COMMON MISTAKE:** Saying deterministic means financially correct.
+
+### Q18. Why DynamoDB, and what are its keys?
+
+**DIFFICULTY:** Intermediate.
+
+**WHY THE INTERVIEWER ASKS THIS:** To test access-pattern design.
+
+**WHAT I MUST UNDERSTAND BEFORE ANSWERING:** Invoice composite key and job lookup.
+
+**WORD-BY-WORD PRACTICE ANSWER:**  
+“The invoice table uses tenant ID as partition key and invoice ID as sort key. That supports listing a user’s invoices and reading one invoice directly. Jobs use a separate job ID key. DynamoDB fits these key-based records, but analytics and alternate ordering need additional design.”
+
+**PROJECT EVIDENCE:** I2/B9.
+
+**FOLLOW-UP QUESTION 1:** Are the GSIs used?  
+**WORD-BY-WORD FOLLOW-UP ANSWER:** “The two status/risk indexes are defined, but the inspected list helper queries the base tenant partition.”
+
+**FOLLOW-UP QUESTION 2:** When would relational storage be better?  
+**WORD-BY-WORD FOLLOW-UP ANSWER:** “When accounting relationships, joins, and relational reporting become central requirements.”
+
+**COMMON MISTAKE:** Claiming NoSQL removes schema and access-pattern planning.
+
+### Q19. How does pagination work?
+
+**DIFFICULTY:** Advanced.
+
+**WHY THE INTERVIEWER ASKS THIS:** To test database semantics and UI correctness.
+
+**WHAT I MUST UNDERSTAND BEFORE ANSWERING:** LastEvaluatedKey, filters, and sort order.
+
+**WORD-BY-WORD PRACTICE ANSWER:**  
+“The API encodes DynamoDB’s last evaluated key as a base64 cursor and passes it back on the next request. Status and risk are filter expressions. The UI replaces the displayed page when the cursor changes, even though the button says Load more. Ordering is descending invoice ID, which is not precise creation-time ordering within a day.”
+
+**PROJECT EVIDENCE:** B2/B9/F6.
+
+**FOLLOW-UP QUESTION 1:** Can a page have few results and still have a cursor?  
+**WORD-BY-WORD FOLLOW-UP ANSWER:** “Yes. Filtering can remove evaluated records while more records remain.”
+
+**FOLLOW-UP QUESTION 2:** What happens when filters change?  
+**WORD-BY-WORD FOLLOW-UP ANSWER:** “The current component can retain the old cursor. It should reset pagination.”
+
+**COMMON MISTAKE:** Assuming the page limit guarantees that many matching invoices.
+
+### Q20. How are analytics calculated?
+
+**DIFFICULTY:** Intermediate.
+
+**WHY THE INTERVIEWER ASKS THIS:** To test scaling awareness.
+
+**WHAT I MUST UNDERSTAND BEFORE ANSWERING:** Tenant queries and repeated aggregation.
+
+**WORD-BY-WORD PRACTICE ANSWER:**  
+“Each endpoint queries all records for the authenticated tenant, follows pagination, and aggregates them in Python. It is not a table-wide scan. The approach is straightforward for small histories, but the endpoints repeat that work. I would measure cost and latency before introducing incremental aggregates.”
+
+**PROJECT EVIDENCE:** B3/F4.
+
+**FOLLOW-UP QUESTION 1:** Is the trend limited to 30 days?  
+**WORD-BY-WORD FOLLOW-UP ANSWER:** “No. The label says that, but the backend does not apply a cutoff.”
+
+**FOLLOW-UP QUESTION 2:** What would you optimize first?  
+**WORD-BY-WORD FOLLOW-UP ANSWER:** “Avoid repeated full-history reads and add a bounded time range or materialized summaries when justified.”
+
+**COMMON MISTAKE:** Repeating the documentation’s “full table scan” claim.
+
+### E. Security and frontend behavior
+
+### Q21. How does authentication differ from authorization here?
+
+**DIFFICULTY:** Intermediate.
+
+**WHY THE INTERVIEWER ASKS THIS:** To test a core security distinction.
+
+**WHAT I MUST UNDERSTAND BEFORE ANSWERING:** Valid identity versus resource ownership.
+
+**WORD-BY-WORD PRACTICE ANSWER:**  
+“Cognito and API Gateway establish who the requester is. The application then uses the user’s subject claim to scope invoice operations. That is authorization. The status endpoint has a gap because its job fallback does not verify the stored tenant. A valid token alone does not prove ownership of any requested invoice.”
+
+**PROJECT EVIDENCE:** F2/B2/B10/I3/I5.
+
+**FOLLOW-UP QUESTION 1:** Is the frontend protected route sufficient?  
+**WORD-BY-WORD FOLLOW-UP ANSWER:** “No. It only controls navigation.”
+
+**FOLLOW-UP QUESTION 2:** Is this organization-level tenancy?  
+**WORD-BY-WORD FOLLOW-UP ANSWER:** “No. The current tenant is effectively an individual Cognito user.”
+
+**COMMON MISTAKE:** Saying an unguessable ID replaces authorization.
+
+### Q22. What is the frontend cache security issue?
+
+**DIFFICULTY:** Advanced.
+
+**WHY THE INTERVIEWER ASKS THIS:** To test security beyond API calls.
+
+**WHAT I MUST UNDERSTAND BEFORE ANSWERING:** Query-client lifetime and account switching.
+
+**WORD-BY-WORD PRACTICE ANSWER:**  
+“The query client survives navigation and logout. Its keys do not include the current user. Logout clears authentication display state, but cached invoice and analytics data remain. Another user signing in during the same application session can receive stale data. I would clear private state on logout and namespace queries by user.”
+
+**PROJECT EVIDENCE:** F1/F4/F5.
+
+**FOLLOW-UP QUESTION 1:** Does a correct backend fix this?  
+**WORD-BY-WORD FOLLOW-UP ANSWER:** “No. The data may already be in the browser cache.”
+
+**FOLLOW-UP QUESTION 2:** What test would prove the fix?  
+**WORD-BY-WORD FOLLOW-UP ANSWER:** “Load data as user A, sign out, sign in as user B, and verify A’s data is never rendered.”
+
+**COMMON MISTAKE:** Reviewing tenant security only in database queries.
+
+### Q23. How are uploads secured?
+
+**DIFFICULTY:** Intermediate.
+
+**WHY THE INTERVIEWER ASKS THIS:** To test delegated access and input validation.
+
+**WHAT I MUST UNDERSTAND BEFORE ANSWERING:** Presigned URL scope and client/server controls.
+
+**WORD-BY-WORD PRACTICE ANSWER:**  
+“The authenticated API generates a tenant-prefixed object key and a five-minute PUT URL for an allowed content type. The bucket blocks public access. The frontend checks size and MIME type, but those browser checks can be bypassed. Actual object validation is still needed before expensive processing.”
+
+**PROJECT EVIDENCE:** B1/F3/I2/I5.
+
+**FOLLOW-UP QUESTION 1:** Can the URL be reused during its validity?  
+**WORD-BY-WORD FOLLOW-UP ANSWER:** “The application does not implement a one-use upload token or processing lock, so reuse and overwrite behavior need an explicit policy.”
+
+**FOLLOW-UP QUESTION 2:** Is MIME type proof of file contents?  
+**WORD-BY-WORD FOLLOW-UP ANSWER:** “No. It is declared metadata.”
+
+**COMMON MISTAKE:** Calling the browser’s 10 MiB check a server-enforced limit.
+
+### Q24. How are AWS permissions and credentials handled?
+
+**DIFFICULTY:** Intermediate.
+
+**WHY THE INTERVIEWER ASKS THIS:** To test cloud security fundamentals.
+
+**WHAT I MUST UNDERSTAND BEFORE ANSWERING:** Execution roles, deployment identity, and public configuration.
+
+**WORD-BY-WORD PRACTICE ANSWER:**  
+“The Lambdas use IAM execution roles defined through CDK grants and policy statements. CI is configured to assume a deployment role through OIDC. The frontend receives public API and Cognito identifiers, not AWS secret access keys. Some service permissions use wildcard resources, so I would not call every policy strict least privilege.”
+
+**PROJECT EVIDENCE:** I3–I5/C1 and environment examples.
+
+**FOLLOW-UP QUESTION 1:** Is the OIDC role created here?  
+**WORD-BY-WORD FOLLOW-UP ANSWER:** “No. The workflow references its ARN as external configuration.”
+
+**FOLLOW-UP QUESTION 2:** Are there exposed credentials?  
+**WORD-BY-WORD FOLLOW-UP ANSWER:** “Documentation contains demo passwords. Their validity is unverified, and they should not be reused for live access.”
+
+**COMMON MISTAKE:** Confusing a Cognito client ID with a secret.
+
+### Q25. Why can the UI show an error after processing succeeds?
+
+**DIFFICULTY:** Intermediate.
+
+**WHY THE INTERVIEWER ASKS THIS:** To test frontend/backend coordination.
+
+**WHAT I MUST UNDERSTAND BEFORE ANSWERING:** Separate query keys and invalidation.
+
+**WORD-BY-WORD PRACTICE ANSWER:**  
+“The detail query can run before the invoice record exists and return 404. A separate query polls the job status. When that query sees COMPLETED, it stops polling but does not refresh the detail query. The backend can be correct while the screen remains stale.”
+
+**PROJECT EVIDENCE:** F4/F6, B8.
+
+**FOLLOW-UP QUESTION 1:** What is the smallest improvement?  
+**WORD-BY-WORD FOLLOW-UP ANSWER:** “Invalidate or enable the detail query when processing reaches completion.”
+
+**FOLLOW-UP QUESTION 2:** What about failed processing?  
+**WORD-BY-WORD FOLLOW-UP ANSWER:** “Display the job failure state and safe error detail instead of hiding the banner.”
+
+**COMMON MISTAKE:** Immediately blaming Textract or Bedrock for a stale screen.
+
+### F. AWS deployment and notifications
+
+### Q26. What do CloudFront and S3 do for the frontend?
+
+**DIFFICULTY:** Beginner.
+
+**WHY THE INTERVIEWER ASKS THIS:** To test static hosting architecture.
+
+**WHAT I MUST UNDERSTAND BEFORE ANSWERING:** Static assets, private origin, and browser routing.
+
+**WORD-BY-WORD PRACTICE ANSWER:**  
+“Vite produces static files. FrontendStack stores them in a private S3 bucket and serves them through CloudFront using origin access control. HTTP redirects to HTTPS. Error responses map to the SPA entry page so browser routes can load.”
+
+**PROJECT EVIDENCE:** I6/F1/F7.
+
+**FOLLOW-UP QUESTION 1:** Does CloudFront host the Python backend?  
+**WORD-BY-WORD FOLLOW-UP ANSWER:** “No. The browser calls the separately configured API Gateway endpoint.”
+
+**FOLLOW-UP QUESTION 2:** What caching problem exists?  
+**WORD-BY-WORD FOLLOW-UP ANSWER:** “The CDK deployment gives all files long caching, while the frontend workflow correctly treats the HTML entry point separately.”
+
+**COMMON MISTAKE:** Describing React as a persistent server here.
+
+### Q27. Why are high-risk email alerts not verified?
+
+**DIFFICULTY:** Advanced.
+
+**WHY THE INTERVIEWER ASKS THIS:** To test integration details.
+
+**WHAT I MUST UNDERSTAND BEFORE ANSWERING:** Event source, bus, rule, target, and subscription.
+
+**WORD-BY-WORD PRACTICE ANSWER:**  
+“The store function publishes to a bus named invoice-platform. The CDK rule is created on the default bus, and no custom bus is defined. An SNS topic exists, but no subscriber is configured in the repository. I can claim partial alerting implementation, not verified email delivery.”
+
+**PROJECT EVIDENCE:** B8/I4.
+
+**FOLLOW-UP QUESTION 1:** Is the event source the bus name?  
+**WORD-BY-WORD FOLLOW-UP ANSWER:** “No. Source is an event attribute; the bus is the destination receiving the event.”
+
+**FOLLOW-UP QUESTION 2:** What would you test?  
+**WORD-BY-WORD FOLLOW-UP ANSWER:** “A HIGH-risk test event should reach the intended rule, topic, and confirmed destination, with delivery evidence.”
+
+**COMMON MISTAKE:** Treating topic creation as email delivery.
+
+### Q28. How is the project deployed?
+
+**DIFFICULTY:** Intermediate.
+
+**WHY THE INTERVIEWER ASKS THIS:** To test release understanding.
+
+**WHAT I MUST UNDERSTAND BEFORE ANSWERING:** Asset creation, CDK, environment values, and frontend delivery.
+
+**WORD-BY-WORD PRACTICE ANSWER:**  
+“The repository uses CDK to define the infrastructure and packages Python code with a shared layer. The frontend is built with environment values and deployed as static files to S3 behind CloudFront. There are GitHub Actions workflows and manual repair scripts. I would describe current delivery as partially automated because external setup and packaging gaps remain.”
+
+**PROJECT EVIDENCE:** I1–I6/C1/D2.
+
+**FOLLOW-UP QUESTION 1:** Are resources currently running?  
+**WORD-BY-WORD FOLLOW-UP ANSWER:** “The repository contains historical screenshots and transcripts, but I have not verified current AWS state.”
+
+**FOLLOW-UP QUESTION 2:** How would you roll back?  
+**WORD-BY-WORD FOLLOW-UP ANSWER:** “The project needs an explicit versioned release and rollback procedure. It does not currently define a complete canary or rollback strategy.”
+
+**COMMON MISTAKE:** Claiming a live deployment from screenshots alone.
+
+### Q29. Why is Lambda layer packaging a concern?
+
+**DIFFICULTY:** Advanced.
+
+**WHY THE INTERVIEWER ASKS THIS:** To test runtime and build compatibility.
+
+**WHAT I MUST UNDERSTAND BEFORE ANSWERING:** Import paths and native dependency platforms.
+
+**WORD-BY-WORD PRACTICE ANSWER:**  
+“The functions import a package named shared, so the layer must preserve that package under the Python layer path. The first-party packaged files match the source, but the native Pydantic-core wheel is built for Windows x64 while Lambda targets Linux ARM64. I would rebuild dependencies for the target platform and verify imports in a compatible environment.”
+
+**PROJECT EVIDENCE:** I4/I5, layer WHEEL metadata, repair scripts.
+
+**FOLLOW-UP QUESTION 1:** Does that break every function now?  
+**WORD-BY-WORD FOLLOW-UP ANSWER:** “Not necessarily. Current handlers do not import the Pydantic models, so the incompatible native package may remain unused.”
+
+**FOLLOW-UP QUESTION 2:** Is Docker the production runtime?  
+**WORD-BY-WORD FOLLOW-UP ANSWER:** “No. Docker is only a bundling option in this repository.”
+
+**COMMON MISTAKE:** Claiming universal runtime failure from an unused dependency.
+
+### Q30. Does CI/CD really work?
+
+**DIFFICULTY:** Advanced.
+
+**WHY THE INTERVIEWER ASKS THIS:** To test evidence discipline.
+
+**WHAT I MUST UNDERSTAND BEFORE ANSWERING:** Workflow definitions, secrets, test gates, and deployment configuration.
+
+**WORD-BY-WORD PRACTICE ANSWER:**  
+“Workflow files exist for tests, frontend builds, infrastructure synthesis, and deployment. I cannot verify successful runs or required secrets from local source. The OCR test import is broken, and backend deployment omits the frontend origin context. Those are concrete reasons not to claim a healthy automatic release process yet.”
+
+**PROJECT EVIDENCE:** C1/T1/I5/D3.
+
+**FOLLOW-UP QUESTION 1:** What should happen first?  
+**WORD-BY-WORD FOLLOW-UP ANSWER:** “Make the test gate pass against the actual source and make artifact packaging reproducible.”
+
+**FOLLOW-UP QUESTION 2:** Are AWS keys stored in the workflow?  
+**WORD-BY-WORD FOLLOW-UP ANSWER:** “The workflow is configured for OIDC role assumption.”
+
+**COMMON MISTAKE:** Equating YAML files with successful automation.
+
+### G. Troubleshooting scenarios
+
+### Q31. An invoice remains stuck. How do you investigate?
+
+**DIFFICULTY:** Advanced.
+
+**WHY THE INTERVIEWER ASKS THIS:** To test systematic isolation.
+
+**WHAT I MUST UNDERSTAND BEFORE ANSWERING:** The full processing chain and separate UI state.
+
+**WORD-BY-WORD PRACTICE ANSWER:**  
+“Symptom: the invoice remains processing. First I capture the invoice ID and check whether upload completed. I inspect the S3 object, job record, trigger logs, and workflow logs. Possible causes include a missing event, launch failure, stage timeout, failed status update, or stale frontend state. I isolate the last confirmed boundary, fix that cause, and verify both durable completion and UI refresh.”
+
+**PROJECT EVIDENCE:** B1/B4–B9/F4/F6/I4.
+
+**FOLLOW-UP QUESTION 1:** What if the job is complete?  
+**WORD-BY-WORD FOLLOW-UP ANSWER:** “Then I investigate the invoice read and frontend cache before rerunning processing.”
+
+**FOLLOW-UP QUESTION 2:** What if the queue is empty?  
+**WORD-BY-WORD FOLLOW-UP ANSWER:** “That does not prove the workflow succeeded. The trigger may already have acknowledged the handoff.”
+
+**COMMON MISTAKE:** Re-uploading repeatedly before identifying the failure.
+
+### Q32. The application works locally but fails through CloudFront. What do you check?
+
+**DIFFICULTY:** Intermediate.
+
+**WHY THE INTERVIEWER ASKS THIS:** To test deployment configuration and CORS.
+
+**WHAT I MUST UNDERSTAND BEFORE ANSWERING:** Build-time values and allowed origins.
+
+**WORD-BY-WORD PRACTICE ANSWER:**  
+“Symptom: the hosted UI loads but API requests fail. First I inspect the browser request URL, Origin, and response status. I check the built API/Cognito values, API allowed origins, gateway error headers, and the latest deployment context. A likely cause is the backend workflow restoring localhost-only CORS. After correcting configuration, I verify both successful requests and authentication errors from the hosted origin.”
+
+**PROJECT EVIDENCE:** F2/F3/I5/C1.
+
+**FOLLOW-UP QUESTION 1:** Is every CORS error a CORS configuration bug?  
+**WORD-BY-WORD FOLLOW-UP ANSWER:** “No. A real 401 or 500 can be hidden by missing CORS headers.”
+
+**FOLLOW-UP QUESTION 2:** Is changing local environment configuration enough?  
+**WORD-BY-WORD FOLLOW-UP ANSWER:** “No. Vite values are baked into the deployed bundle.”
+
+**COMMON MISTAKE:** Opening all origins without investigating the actual response.
+
+### Q33. Bedrock is slow or throttled. How do you troubleshoot?
+
+**DIFFICULTY:** Advanced.
+
+**WHY THE INTERVIEWER ASKS THIS:** To test quotas, retries, and latency.
+
+**WHAT I MUST UNDERSTAND BEFORE ANSWERING:** Local limiter, concurrent environments, and timeout budget.
+
+**WORD-BY-WORD PRACTICE ANSWER:**  
+“Symptom: the AI stage is slow or unavailable. First I inspect AI-stage logs and throttling errors. I compare request volume, prompt size, retry waits, and Lambda duration. Possible causes include account quotas, many concurrent workflows, oversized prompts, or limiter sleeps. I isolate the dominant cause, bound concurrency or input size as needed, and verify latency plus analysis-completion rate.”
+
+**PROJECT EVIDENCE:** B6/I4.
+
+**FOLLOW-UP QUESTION 1:** Why doesn’t the ten-per-minute limiter solve it?  
+**WORD-BY-WORD FOLLOW-UP ANSWER:** “It is local to one execution environment.”
+
+**FOLLOW-UP QUESTION 2:** Should you increase retries indefinitely?  
+**WORD-BY-WORD FOLLOW-UP ANSWER:** “No. Retries must fit the timeout and quota situation.”
+
+**COMMON MISTAKE:** Treating retries as capacity management.
+
+### Q34. You receive AccessDenied from AWS. What do you check?
+
+**DIFFICULTY:** Intermediate.
+
+**WHY THE INTERVIEWER ASKS THIS:** To test permission troubleshooting.
+
+**WHAT I MUST UNDERSTAND BEFORE ANSWERING:** Service action, resource, role, region, and external policy boundaries.
+
+**WORD-BY-WORD PRACTICE ANSWER:**  
+“Symptom: a stage receives AccessDenied. First I identify the exact AWS action and resource from the stage log. I check that function’s execution role, the relevant CDK grant, resource policies, region, and any account-level restrictions. I compare the required action with the allowed action, make the smallest correction, and verify the same operation without widening unrelated permissions.”
+
+**PROJECT EVIDENCE:** I4/I5 and Boto3 calls.
+
+**FOLLOW-UP QUESTION 1:** Would administrator access prove the design is correct?  
+**WORD-BY-WORD FOLLOW-UP ANSWER:** “No. It would hide the permission problem.”
+
+**FOLLOW-UP QUESTION 2:** Does the frontend need AWS access keys?  
+**WORD-BY-WORD FOLLOW-UP ANSWER:** “No. It uses Cognito tokens and the presigned upload capability.”
+
+**COMMON MISTAKE:** Adding wildcard administrator permissions as the permanent fix.
+
+### Q35. HIGH-risk invoices produce no email. What is your investigation?
+
+**DIFFICULTY:** Advanced.
+
+**WHY THE INTERVIEWER ASKS THIS:** To test event-driven troubleshooting.
+
+**WHAT I MUST UNDERSTAND BEFORE ANSWERING:** Publisher, bus, match, target, and destination.
+
+**WORD-BY-WORD PRACTICE ANSWER:**  
+“Symptom: a HIGH-risk result exists without an email. First I inspect the publisher’s bus name and the rule’s bus. The source already shows a mismatch. Then I check event attributes, target delivery, and confirmed subscriptions. I align those components, send a controlled HIGH-risk event, and verify receipt. I would not trust the publisher’s success log alone.”
+
+**PROJECT EVIDENCE:** B8/I4.
+
+**FOLLOW-UP QUESTION 1:** What if PutEvents returns 200?  
+**WORD-BY-WORD FOLLOW-UP ANSWER:** “That alone does not establish correct routing or delivery.”
+
+**FOLLOW-UP QUESTION 2:** Should invoice storage fail when email fails?  
+**WORD-BY-WORD FOLLOW-UP ANSWER:** “That is a product decision. I would normally preserve the result while tracking and retrying notification delivery separately.”
+
+**COMMON MISTAKE:** Debugging only the email inbox.
+
+### H. Testing, scalability, and pressure questions
+
+### Q36. How is this project tested?
+
+**DIFFICULTY:** Intermediate.
+
+**WHY THE INTERVIEWER ASKS THIS:** To test quality claims.
+
+**WHAT I MUST UNDERSTAND BEFORE ANSWERING:** Existing test scope and missing coverage.
+
+**WORD-BY-WORD PRACTICE ANSWER:**  
+“There are 44 test functions for response helpers, OCR parsing, prompt construction, and scoring rules. They do not prove the entire AWS workflow. The OCR test imports the wrong module, so I would fix collection before claiming a passing suite. I would then add ownership, duplicate-event, malformed-model-output, storage-failure, and UI completion tests.”
+
+**PROJECT EVIDENCE:** T1/C1.
+
+**FOLLOW-UP QUESTION 1:** Does Moto mean integration testing exists?  
+**WORD-BY-WORD FOLLOW-UP ANSWER:** “No. It is listed as a dependency, but the inspected tests do not exercise the complete service chain.”
+
+**FOLLOW-UP QUESTION 2:** Were tests run during this review?  
+**WORD-BY-WORD FOLLOW-UP ANSWER:** “No. This was a read-only source analysis.”
+
+**COMMON MISTAKE:** Inventing a coverage percentage.
+
+### Q37. How would you evaluate the AI component?
+
+**DIFFICULTY:** Advanced.
+
+**WHY THE INTERVIEWER ASKS THIS:** To test model-quality reasoning.
+
+**WHAT I MUST UNDERSTAND BEFORE ANSWERING:** Labeled data, false positives, OCR quality, and schema validity.
+
+**WORD-BY-WORD PRACTICE ANSWER:**  
+“I would create a labeled set of clean and anomalous invoices covering currencies, layouts, taxes, duplicates, missing fields, and adversarial text. I would measure extraction correctness separately from anomaly precision and recall. I would also measure schema-valid output rate and behavior when AI is unavailable. The current sample images are useful demos but are not a labeled benchmark.”
+
+**PROJECT EVIDENCE:** Sample invoice directory, T1/B5–B7.
+
+**FOLLOW-UP QUESTION 1:** Why separate OCR and AI evaluation?  
+**WORD-BY-WORD FOLLOW-UP ANSWER:** “A wrong AI finding may originate from a wrong extracted value.”
+
+**FOLLOW-UP QUESTION 2:** How would you compare models?  
+**WORD-BY-WORD FOLLOW-UP ANSWER:** “Use the same labeled cases, prompt version, quality metrics, latency measurements, and token-cost accounting.”
+
+**COMMON MISTAKE:** Choosing a model from a few attractive screenshots.
+
+### Q38. What happens at ten times the traffic?
+
+**DIFFICULTY:** Advanced.
+
+**WHY THE INTERVIEWER ASKS THIS:** To test bottleneck reasoning without invented capacity.
+
+**WHAT I MUST UNDERSTAND BEFORE ANSWERING:** Launch rate, service quotas, analytics, and duplicate cost.
+
+**WORD-BY-WORD PRACTICE ANSWER:**  
+“I cannot give a safe capacity number without load tests. The main concerns are workflow launch rate, Textract and Bedrock quotas, local-only rate limiting, repeated analytics reads, and polling traffic. I would measure queue age, stage throttles, latency, and read capacity, then introduce bounded concurrency and optimize the dominant bottleneck.”
+
+**PROJECT EVIDENCE:** B3/B4/B6/I4/F4.
+
+**FOLLOW-UP QUESTION 1:** Which parts scale horizontally?  
+**WORD-BY-WORD FOLLOW-UP ANSWER:** “Stateless Lambda work can run concurrently, but external quotas and shared data access still constrain the whole system.”
+
+**FOLLOW-UP QUESTION 2:** What would you change first?  
+**WORD-BY-WORD FOLLOW-UP ANSWER:** “Prevent duplicates and bound processing before increasing throughput.”
+
+**COMMON MISTAKE:** Saying serverless scales without limits.
+
+### Q39. How would you monitor and optimize cost?
+
+**DIFFICULTY:** Advanced.
+
+**WHY THE INTERVIEWER ASKS THIS:** To test operational judgment.
+
+**WHAT I MUST UNDERSTAND BEFORE ANSWERING:** Business outcomes, stage metrics, and dominant spend.
+
+**WORD-BY-WORD PRACTICE ANSWER:**  
+“I would monitor upload-to-result latency, queue age, stage failures, AI-unavailable rate, duplicate processing, and notification delivery. For cost, I would calculate spend per completed and fully analyzed invoice. I would first remove duplicate work and repeated reads, then tune prompts and compute based on measured usage. The README estimate is not a verified bill.”
+
+**PROJECT EVIDENCE:** I4/I5/B3/B6/B8.
+
+**FOLLOW-UP QUESTION 1:** Is the displayed duration sufficient?  
+**WORD-BY-WORD FOLLOW-UP ANSWER:** “No. It omits queue and orchestration time and part of storage.”
+
+**FOLLOW-UP QUESTION 2:** Are existing logs structured telemetry?  
+**WORD-BY-WORD FOLLOW-UP ANSWER:** “They are mostly prefixed print statements. I would add consistent structured fields and correlation identifiers.”
+
+**COMMON MISTAKE:** Using demo timing or free-tier assumptions as a production forecast.
+
+### Q40. Is this production-ready, and what would you improve first?
+
+**DIFFICULTY:** Advanced.
+
+**WHY THE INTERVIEWER ASKS THIS:** To test honesty and prioritization.
+
+**WHAT I MUST UNDERSTAND BEFORE ANSWERING:** Security, correctness, reliability, and evidence.
+
+**WORD-BY-WORD PRACTICE ANSWER:**  
+“It has a substantial implemented workflow and useful cloud foundations, but I would not call it production-ready. I would first close ownership and cache-isolation gaps, make processing idempotent, validate model output, and distinguish degraded analysis from clean completion. Then I would correct financial rules, repair deployment and alerts, and establish a reliable test and evaluation process.”
+
+**PROJECT EVIDENCE:** B2/B4/B6/B7/B9, F4/F5, I4/I5, T1/C1.
+
+**FOLLOW-UP QUESTION 1:** Why not add agents first?  
+**WORD-BY-WORD FOLLOW-UP ANSWER:** “Agents would not solve the current correctness and reliability problems.”
+
+**FOLLOW-UP QUESTION 2:** What evidence would change your readiness assessment?  
+**WORD-BY-WORD FOLLOW-UP ANSWER:** “Passing isolation and failure tests, evaluated output quality, reproducible deployments, measured load behavior, and verified monitoring and recovery.”
+
+**COMMON MISTAKE:** Defending production readiness because the demo worked once.
+
+---
+
+### Interview Chain Questions
+
+**Chain 1 — Main architecture**
+
+Q1 project introduction  
+→ Q4 architecture  
+→ Q5 SQS  
+→ Q6 Express  
+→ Q7 duplicate delivery  
+→ Q8 failure states  
+→ Q31 troubleshooting  
+→ Q38 scaling.
+
+**Chain 2 — AI trust**
+
+Q9 OCR  
+→ Q10 model invocation  
+→ Q11 prompt  
+→ Q12 validation  
+→ Q13 AI failure  
+→ Q15 injection/hallucination  
+→ Q37 evaluation.
+
+**Chain 3 — Financial correctness**
+
+Q16 scoring  
+→ Q17 math semantics  
+→ OCR extraction quality  
+→ currency normalization  
+→ duplicate findings  
+→ labeled evaluation  
+→ review-required decisions.
+
+**Chain 4 — Security**
+
+Q21 authentication/authorization  
+→ job ownership  
+→ Q22 browser caches  
+→ Q23 upload constraints  
+→ Q24 IAM  
+→ Q34 AccessDenied investigation.
+
+**Chain 5 — Delivery**
+
+Q28 deployment  
+→ Q29 layer compatibility  
+→ Q30 CI/CD  
+→ Q32 hosted CORS failure  
+→ Q26 caching  
+→ rollback and release verification.
+
+**Chain 6 — Operational claims**
+
+Q27 notifications  
+→ Q35 missing email  
+→ Q39 monitoring and cost  
+→ Q40 production readiness.
+
+---
+
+### Interviewer Pressure Questions
+
+Use these concise answers alongside the detailed bank.
+
+**“You said this is Agentic AI. Where does the model choose a tool?”**  
+“It does not. The accurate description is a fixed workflow with Generative AI analysis.”
+
+**“You said RAG. Show me the retrieval code.”**  
+“There is no retrieval implementation. The model receives the current invoice’s extracted content.”
+
+**“You said users can never see each other’s data. What about the jobs table?”**  
+“The current job-status fallback lacks an ownership comparison. Complete isolation is not a defensible claim yet.”
+
+**“You said retries are safe. Why does each execution get a random name?”**  
+“That is a gap. The current code does not implement complete idempotency.”
+
+**“You said the DLQ catches OCR failures. When is the SQS message acknowledged?”**  
+“The trigger returns after starting the workflow. Later OCR failures are outside that queue retry boundary.”
+
+**“You said the rules are 100% reliable. What about tax?”**  
+“The arithmetic is deterministic, but the financial assumptions are incomplete. Tax and other adjustments need explicit handling.”
+
+**“You said the score is low. What if Bedrock was unavailable?”**  
+“AI failure can reduce the score. A separate analysis-quality state is needed.”
+
+**“You said an email was sent. Where is the subscription?”**  
+“No subscription is defined in the repository, and the event bus wiring also needs correction.”
+
+**“You said this takes three seconds end to end. What exactly is timed?”**  
+“The stored value is a partial sum of stage times. It is not a valid end-to-end benchmark.”
+
+**“You said CI/CD is operational. Can you prove a successful run?”**  
+“Not from the local repository. Workflow definitions exist, but runtime success and secrets are unverified.”
+
+**“What did you personally implement?”**  
+“I would answer using my actual contributions and evidence. I would not claim ownership of every repository component solely because I can explain it.”
+
+---
+
+### Top 10 Questions You Absolutely Must Answer
+
+Selected because they cover the project’s central behavior and most consequential limitations:
+
+1. Q1 — What does the project do?
+2. Q4 — What is the real end-to-end architecture?
+3. Q5 — What does SQS protect, and what does it not protect?
+4. Q7 — What happens on duplicate delivery?
+5. Q10 — Which model is called, and how?
+6. Q13 — What happens when AI fails?
+7. Q16 — How is the risk score calculated?
+8. Q21 — How are authentication and ownership enforced?
+9. Q28 — How is the project deployed?
+10. Q40 — What prevents production readiness?
+
+### Top 20 Technical Questions
+
+1. Q4 — Architecture.
+2. Q5 — SQS and DLQ boundaries.
+3. Q6 — Express workflow choice.
+4. Q7 — Idempotency.
+5. Q8 — Failure-state semantics.
+6. Q9 — Textract parsing.
+7. Q10 — Bedrock invocation.
+8. Q11 — Prompt construction.
+9. Q12 — Model-output validation.
+10. Q13 — AI fallback.
+11. Q16 — Risk formula.
+12. Q17 — Financial correctness.
+13. Q18 — DynamoDB keys.
+14. Q19 — Pagination and ordering.
+15. Q20 — Analytics scaling.
+16. Q21 — Authorization.
+17. Q22 — Browser cache isolation.
+18. Q27 — EventBridge/SNS wiring.
+19. Q29 — Layer compatibility.
+20. Q30 — CI/CD evidence and gaps.
+
+### Top Advanced / Pressure Questions
+
+- Why is overwriting a DynamoDB record insufficient for idempotency?
+- How can a workflow succeed while the invoice job fails?
+- How can a completed invoice have incomplete AI analysis?
+- How can valid JSON still crash the next stage?
+- Why can a correct backend still expose stale user data in the browser?
+- Why does adding SQS not automatically control Bedrock concurrency?
+- Why can EventBridge publication appear successful without notification delivery?
+- Why is a repeated line-item description not necessarily an error?
+- Why does the packaged native dependency not prove every Lambda currently fails?
+- What measurements and tests would justify production-readiness claims?
+
+These practice answers are training wheels. The goal is to explain the same behavior naturally, trace it to the implementation, and acknowledge limitations without exaggeration.
