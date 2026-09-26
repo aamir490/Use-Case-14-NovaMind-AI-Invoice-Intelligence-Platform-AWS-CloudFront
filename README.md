@@ -1,42 +1,191 @@
-# NovaMind Ai Invoice Intelligence Platform
+# NovaMind AI Invoice Intelligence Platform
 
-> AI-powered serverless invoice processing with anomaly detection, risk scoring, and a full React dashboard — built on AWS.
+<p align="center">
+  <strong>AI-powered serverless invoice processing with OCR, anomaly analysis, heuristic risk scoring, and a full React dashboard — built on AWS.</strong>
+</p>
 
-**Created by [Aamir](https://github.com/aamir490)** · [LinkedIn](https://www.linkedin.com/in/aamir-imran)
+<!-- ====================================================== -->
+<!-- PERSONAL BRANDING -->
+<!-- ====================================================== -->
+
+<p align="center">
+  <strong>Built & Engineered by Aamir Imran</strong>
+</p>
+
+<p align="center">
+  <strong>AWS Generative AI Engineer | Agentic AI | RAG | MLOps | DevOps</strong>
+</p>
+
+<p align="center">
+  Building production-oriented Generative AI, RAG, Agentic AI, MLOps, and cloud-native AI applications on AWS.
+</p>
+
+<p align="center">
+  <a href="https://github.com/aamir490">
+    <img src="https://img.shields.io/badge/GitHub-aamir490-181717?style=for-the-badge&logo=github&logoColor=white" alt="GitHub"/>
+  </a>
+  <a href="https://www.linkedin.com/in/aamir-imran">
+    <img src="https://img.shields.io/badge/LinkedIn-Aamir%20Imran-0A66C2?style=for-the-badge&logo=linkedin&logoColor=white" alt="LinkedIn"/>
+  </a>
+</p>
+
+<p align="center">
+  <sub>Part of my hands-on AWS Generative AI engineering portfolio.</sub>
+</p>
 
 ---
 
-<!-- CI/CD -->
-[![Backend CI/CD](https://github.com/aamir490/Use-Case-14-NovaMind-AI-Invoice-Intelligence-Platform-AWS-CloudFront/actions/workflows/backend.yml/badge.svg)](https://github.com/aamir490/Use-Case-14-NovaMind-AI-Invoice-Intelligence-Platform-AWS-CloudFront/actions/workflows/backend.yml)
-[![Frontend CI/CD](https://github.com/aamir490/Use-Case-14-NovaMind-AI-Invoice-Intelligence-Platform-AWS-CloudFront/actions/workflows/frontend.yml/badge.svg)](https://github.com/aamir490/Use-Case-14-NovaMind-AI-Invoice-Intelligence-Platform-AWS-CloudFront/actions/workflows/frontend.yml)
-[![PR Checks](https://github.com/aamir490/Use-Case-14-NovaMind-AI-Invoice-Intelligence-Platform-AWS-CloudFront/actions/workflows/pr-checks.yml/badge.svg)](https://github.com/aamir490/Use-Case-14-NovaMind-AI-Invoice-Intelligence-Platform-AWS-CloudFront/actions/workflows/pr-checks.yml)
+## CI/CD
 
-<!-- Repo stats -->
-[![GitHub stars](https://img.shields.io/github/stars/aamir490/Use-Case-14-NovaMind-AI-Invoice-Intelligence-Platform-AWS-CloudFront?style=social)](https://github.com/aamir490/Use-Case-14-NovaMind-AI-Invoice-Intelligence-Platform-AWS-CloudFront/stargazers)
-[![GitHub forks](https://img.shields.io/github/forks/aamir490/Use-Case-14-NovaMind-AI-Invoice-Intelligence-Platform-AWS-CloudFront?style=social)](https://github.com/aamir490/Use-Case-14-NovaMind-AI-Invoice-Intelligence-Platform-AWS-CloudFront/network/members)
-[![GitHub last commit](https://img.shields.io/github/last-commit/aamir490/Use-Case-14-NovaMind-AI-Invoice-Intelligence-Platform-AWS-CloudFront)](https://github.com/aamir490/Use-Case-14-NovaMind-AI-Invoice-Intelligence-Platform-AWS-CloudFront/commits/main)
+<p align="center">
+  <a href="https://github.com/aamir490/Use-Case-14-NovaMind-AI-Invoice-Intelligence-Platform-AWS-CloudFront/actions/workflows/backend.yml">
+    <img src="https://github.com/aamir490/Use-Case-14-NovaMind-AI-Invoice-Intelligence-Platform-AWS-CloudFront/actions/workflows/backend.yml/badge.svg" alt="Backend CI/CD"/>
+  </a>
+  <a href="https://github.com/aamir490/Use-Case-14-NovaMind-AI-Invoice-Intelligence-Platform-AWS-CloudFront/actions/workflows/frontend.yml">
+    <img src="https://github.com/aamir490/Use-Case-14-NovaMind-AI-Invoice-Intelligence-Platform-AWS-CloudFront/actions/workflows/frontend.yml/badge.svg" alt="Frontend CI/CD"/>
+  </a>
+  <a href="https://github.com/aamir490/Use-Case-14-NovaMind-AI-Invoice-Intelligence-Platform-AWS-CloudFront/actions/workflows/pr-checks.yml">
+    <img src="https://github.com/aamir490/Use-Case-14-NovaMind-AI-Invoice-Intelligence-Platform-AWS-CloudFront/actions/workflows/pr-checks.yml/badge.svg" alt="PR Checks"/>
+  </a>
+</p>
 
-<!-- Tech stack -->
-[![Python](https://img.shields.io/badge/Python-3.12-3776AB?logo=python&logoColor=white)](https://www.python.org/)
-[![TypeScript](https://img.shields.io/badge/TypeScript-5-3178C6?logo=typescript&logoColor=white)](https://www.typescriptlang.org/)
-[![React](https://img.shields.io/badge/React-18-61DAFB?logo=react&logoColor=black)](https://react.dev/)
-[![Vite](https://img.shields.io/badge/Vite-5-646CFF?logo=vite&logoColor=white)](https://vitejs.dev/)
-[![TailwindCSS](https://img.shields.io/badge/Tailwind_CSS-3-06B6D4?logo=tailwindcss&logoColor=white)](https://tailwindcss.com/)
+---
 
-<!-- AWS services -->
-[![AWS Lambda](https://img.shields.io/badge/AWS-Lambda-FF9900?logo=awslambda&logoColor=white)](https://aws.amazon.com/lambda/)
-[![AWS Step Functions](https://img.shields.io/badge/AWS-Step_Functions-FF9900?logo=amazonaws&logoColor=white)](https://aws.amazon.com/step-functions/)
-[![Amazon Textract](https://img.shields.io/badge/Amazon-Textract-FF9900?logo=amazonaws&logoColor=white)](https://aws.amazon.com/textract/)
-[![Amazon Bedrock](https://img.shields.io/badge/Amazon-Bedrock-FF9900?logo=amazonaws&logoColor=white)](https://aws.amazon.com/bedrock/)
-[![Amazon DynamoDB](https://img.shields.io/badge/Amazon-DynamoDB-4053D6?logo=amazondynamodb&logoColor=white)](https://aws.amazon.com/dynamodb/)
-[![Amazon S3](https://img.shields.io/badge/Amazon-S3-569A31?logo=amazons3&logoColor=white)](https://aws.amazon.com/s3/)
-[![Amazon Cognito](https://img.shields.io/badge/Amazon-Cognito-DD344C?logo=amazonaws&logoColor=white)](https://aws.amazon.com/cognito/)
-[![AWS CDK](https://img.shields.io/badge/AWS-CDK_v2-FF9900?logo=amazonaws&logoColor=white)](https://aws.amazon.com/cdk/)
+## Repository Stats
 
-<!-- Misc -->
-[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
-[![Serverless](https://img.shields.io/badge/Architecture-Serverless-black?logo=serverless&logoColor=red)](https://aws.amazon.com/serverless/)
-[![GenAI](https://img.shields.io/badge/Powered_by-Generative_AI-8A2BE2)](https://aws.amazon.com/bedrock/)
+<p align="center">
+  <a href="https://github.com/aamir490/Use-Case-14-NovaMind-AI-Invoice-Intelligence-Platform-AWS-CloudFront/stargazers">
+    <img src="https://img.shields.io/github/stars/aamir490/Use-Case-14-NovaMind-AI-Invoice-Intelligence-Platform-AWS-CloudFront?style=social" alt="GitHub Stars"/>
+  </a>
+  <a href="https://github.com/aamir490/Use-Case-14-NovaMind-AI-Invoice-Intelligence-Platform-AWS-CloudFront/network/members">
+    <img src="https://img.shields.io/github/forks/aamir490/Use-Case-14-NovaMind-AI-Invoice-Intelligence-Platform-AWS-CloudFront?style=social" alt="GitHub Forks"/>
+  </a>
+  <a href="https://github.com/aamir490/Use-Case-14-NovaMind-AI-Invoice-Intelligence-Platform-AWS-CloudFront/commits/main">
+    <img src="https://img.shields.io/github/last-commit/aamir490/Use-Case-14-NovaMind-AI-Invoice-Intelligence-Platform-AWS-CloudFront" alt="Last Commit"/>
+  </a>
+</p>
+
+---
+
+## Technology Stack
+
+<p align="center">
+  <a href="https://www.python.org/">
+    <img src="https://img.shields.io/badge/Python-3.12-3776AB?logo=python&logoColor=white" alt="Python"/>
+  </a>
+  <a href="https://www.typescriptlang.org/">
+    <img src="https://img.shields.io/badge/TypeScript-5-3178C6?logo=typescript&logoColor=white" alt="TypeScript"/>
+  </a>
+  <a href="https://react.dev/">
+    <img src="https://img.shields.io/badge/React-18-61DAFB?logo=react&logoColor=black" alt="React"/>
+  </a>
+  <a href="https://vitejs.dev/">
+    <img src="https://img.shields.io/badge/Vite-5-646CFF?logo=vite&logoColor=white" alt="Vite"/>
+  </a>
+  <a href="https://tailwindcss.com/">
+    <img src="https://img.shields.io/badge/Tailwind_CSS-3-06B6D4?logo=tailwindcss&logoColor=white" alt="Tailwind CSS"/>
+  </a>
+</p>
+
+---
+
+## AWS Services
+
+<p align="center">
+  <a href="https://aws.amazon.com/lambda/">
+    <img src="https://img.shields.io/badge/AWS-Lambda-FF9900?logo=awslambda&logoColor=white" alt="AWS Lambda"/>
+  </a>
+  <a href="https://aws.amazon.com/step-functions/">
+    <img src="https://img.shields.io/badge/AWS-Step_Functions-FF9900" alt="AWS Step Functions"/>
+  </a>
+  <a href="https://aws.amazon.com/textract/">
+    <img src="https://img.shields.io/badge/Amazon-Textract-FF9900" alt="Amazon Textract"/>
+  </a>
+  <a href="https://aws.amazon.com/bedrock/">
+    <img src="https://img.shields.io/badge/Amazon-Bedrock-8A2BE2" alt="Amazon Bedrock"/>
+  </a>
+  <a href="https://aws.amazon.com/dynamodb/">
+    <img src="https://img.shields.io/badge/Amazon-DynamoDB-4053D6?logo=amazondynamodb&logoColor=white" alt="Amazon DynamoDB"/>
+  </a>
+  <a href="https://aws.amazon.com/s3/">
+    <img src="https://img.shields.io/badge/Amazon-S3-569A31?logo=amazons3&logoColor=white" alt="Amazon S3"/>
+  </a>
+  <a href="https://aws.amazon.com/sqs/">
+    <img src="https://img.shields.io/badge/Amazon-SQS-FF4F8B" alt="Amazon SQS"/>
+  </a>
+  <a href="https://aws.amazon.com/cognito/">
+    <img src="https://img.shields.io/badge/Amazon-Cognito-DD344C" alt="Amazon Cognito"/>
+  </a>
+  <a href="https://aws.amazon.com/api-gateway/">
+    <img src="https://img.shields.io/badge/Amazon-API_Gateway-FF4F8B" alt="Amazon API Gateway"/>
+  </a>
+  <a href="https://aws.amazon.com/cloudfront/">
+    <img src="https://img.shields.io/badge/Amazon-CloudFront-8C4FFF" alt="Amazon CloudFront"/>
+  </a>
+  <a href="https://aws.amazon.com/eventbridge/">
+    <img src="https://img.shields.io/badge/Amazon-EventBridge-FF4F8B" alt="Amazon EventBridge"/>
+  </a>
+  <a href="https://aws.amazon.com/sns/">
+    <img src="https://img.shields.io/badge/Amazon-SNS-FF4F8B" alt="Amazon SNS"/>
+  </a>
+  <a href="https://aws.amazon.com/cloudwatch/">
+    <img src="https://img.shields.io/badge/Amazon-CloudWatch-FF4F8B" alt="Amazon CloudWatch"/>
+  </a>
+  <a href="https://aws.amazon.com/xray/">
+    <img src="https://img.shields.io/badge/AWS-X--Ray-FF9900" alt="AWS X-Ray"/>
+  </a>
+  <a href="https://aws.amazon.com/cdk/">
+    <img src="https://img.shields.io/badge/AWS-CDK_v2-FF9900" alt="AWS CDK"/>
+  </a>
+</p>
+
+---
+
+## Architecture & AI
+
+<p align="center">
+  <a href="https://aws.amazon.com/serverless/">
+    <img src="https://img.shields.io/badge/Architecture-Serverless-black?logo=serverless&logoColor=red" alt="Serverless"/>
+  </a>
+  <a href="https://aws.amazon.com/event-driven-architecture/">
+    <img src="https://img.shields.io/badge/Architecture-Event--Driven-1F6FEB" alt="Event Driven"/>
+  </a>
+  <a href="https://aws.amazon.com/bedrock/">
+    <img src="https://img.shields.io/badge/Powered_by-Generative_AI-8A2BE2" alt="Generative AI"/>
+  </a>
+  <a href="https://aws.amazon.com/bedrock/nova/">
+    <img src="https://img.shields.io/badge/Model-Amazon_Nova_Micro-8A2BE2" alt="Amazon Nova Micro"/>
+  </a>
+</p>
+
+---
+
+## DevOps & Infrastructure
+
+<p align="center">
+  <a href="https://github.com/features/actions">
+    <img src="https://img.shields.io/badge/GitHub_Actions-CI%2FCD-2088FF?logo=githubactions&logoColor=white" alt="GitHub Actions"/>
+  </a>
+  <a href="https://docs.aws.amazon.com/IAM/latest/UserGuide/id_roles_providers_create_oidc.html">
+    <img src="https://img.shields.io/badge/AWS_Auth-OIDC-FF9900" alt="AWS OIDC"/>
+  </a>
+  <a href="https://aws.amazon.com/cdk/">
+    <img src="https://img.shields.io/badge/Infrastructure_as_Code-AWS_CDK-FF9900" alt="Infrastructure as Code"/>
+  </a>
+  <a href="https://aws.amazon.com/cloudformation/">
+    <img src="https://img.shields.io/badge/AWS-CloudFormation-FF4F8B" alt="AWS CloudFormation"/>
+  </a>
+</p>
+
+---
+
+## License
+
+<p align="center">
+  <a href="https://opensource.org/licenses/MIT">
+    <img src="https://img.shields.io/badge/License-MIT-yellow.svg" alt="MIT License"/>
+  </a>
+</p>
 
 
 ---
